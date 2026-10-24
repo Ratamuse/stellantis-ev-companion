@@ -58,6 +58,45 @@ dans l'appli ntfy, puis active les fonctions voulues.
 Photo facultative : dépose `car.png` (ou `.webp`, `.jpg`, fond transparent) à côté de `app.py`. Sans photo, une
 silhouette neutre est affichée. N'utilise pas d'images protégées si tu publies ton installation.
 
+## Accès depuis le téléphone, sans ouvrir de port : Tailscale
+
+La page pilote la voiture et n'a pas de mot de passe : elle ne doit **jamais** être accessible depuis Internet
+(pas de redirection de port sur la box). [Tailscale](https://tailscale.com) crée un réseau privé chiffré entre tes
+appareils : le téléphone voit le serveur comme s'il était à la maison, où que tu sois.
+
+1. Crée un compte sur tailscale.com (connexion Google, Microsoft, Apple ou GitHub) et **active la double
+   authentification** sur ce compte : c'est elle qui protège l'accès.
+2. Sur le serveur :
+   ```bash
+   curl -fsSL https://tailscale.com/install.sh | sh
+   sudo tailscale up
+   ```
+   Ouvre le lien affiché et connecte-toi avec le même compte.
+3. Dans la console Tailscale (*Machines*), menu « … » du serveur → **Disable key expiry**, sinon il se déconnecte au
+   bout de 180 jours.
+4. Sur le téléphone, installe l'appli **Tailscale**, connecte-toi avec le même compte et active-la.
+5. Ouvre `http://<nom-du-serveur>:8080` (ou `http://100.x.y.z:8080`, adresse donnée par `tailscale ip -4`) et
+   ajoute la page à l'écran d'accueil.
+
+Bonus : avec Tailscale, tu peux aussi te connecter en SSH au serveur depuis n'importe où et fermer tout port ouvert
+sur ta box.
+
+## Notifications sur le téléphone : ntfy
+
+La page envoie ses notifications avec [ntfy](https://ntfy.sh), une appli gratuite (Android et iPhone) qui ne demande
+pas de compte.
+
+1. Installe l'appli **ntfy** sur le téléphone.
+2. Dans la page, ouvre **⚙️ Réglages** : la carte *Notifications* affiche ton **sujet**, tiré au hasard au premier
+   lancement (par exemple `ev-8a98a85fba109e95`).
+3. Dans ntfy, appuie sur **+**, colle ce sujet, garde le serveur `ntfy.sh` et valide.
+4. Appuie sur **Envoyer une notification de test** dans la page : elle doit arriver en quelques secondes.
+5. Choisis les alertes voulues (oubli de branchement, fin de charge, charge en heures pleines…).
+
+Les messages passent par le service public ntfy.sh : quiconque connaît le sujet peut les lire. Ils ne contiennent ni
+position ni identifiants, seulement niveaux de batterie, coûts et températures. Ne partage pas ton sujet. Pour un
+contrôle total, tu peux héberger ton propre serveur ntfy et changer `NTFY_SERVER` dans `app.py`.
+
 ## Réglages (`config.json`)
 
 | Clé | Rôle | Exemple |
@@ -130,6 +169,13 @@ Tailscale or a VPN recommended — never expose the page or psa_car_controller t
 
 **Install:** copy `app.py` and `config.example.json` → `config.json` (set your VIN, off-peak windows, departures),
 install `deploy/stellantis-ev-companion.service`, enable it, open `http://<server>:8080`.
+
+**Phone access:** install [Tailscale](https://tailscale.com) on the server (`curl -fsSL https://tailscale.com/install.sh | sh`
+then `sudo tailscale up`) and on your phone with the same account (enable 2FA on it, disable key expiry for the
+server), then open `http://<server-name>:8080`. Do not forward any port on your router.
+
+**Notifications:** install the [ntfy](https://ntfy.sh) app, subscribe to the random topic shown in ⚙️ Réglages, and
+press the test button. Messages go through the public ntfy.sh server; keep the topic private.
 
 **Why:** on a 2021 e-208, psa_car_controller constantly logs `charging status not available from api`; its charge
 control therefore never sees the car charging and never stops it. This page polls the API with `from_cache=0` and
