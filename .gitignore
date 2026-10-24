@@ -1,0 +1,10 @@
+# reglages personnels et etat enregistre par la page (jamais publies)
+*.json
+!config.example.json
+
+# photo et logo personnels
+car.*
+logo.*
+
+__pycache__/
+*.pyc

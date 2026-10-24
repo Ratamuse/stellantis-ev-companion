@@ -1,0 +1,17 @@
+{
+  "vin": "VR3XXXXXXXXXXXXXX",
+  "psacc_url": "http://127.0.0.1:5000",
+  "port": 8080,
+
+  "brand": "Peugeot",
+  "model": "e-208",
+  "battery_kwh": 46,
+
+  "offpeak": [["22:00", "06:00"]],
+
+  "departures": [
+    {"days": [0, 1, 2, 3, 4], "time": "07:30", "place": "Lyon", "lat": 45.764, "lon": 4.835}
+  ],
+  "weather": {"place": "Lyon", "lat": 45.764, "lon": 4.835},
+  "commute": {"label": "Maison ↔ Travail", "km": 25}
+}

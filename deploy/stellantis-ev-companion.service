@@ -1,0 +1,14 @@
+[Unit]
+Description=stellantis-ev-companion (page compagnon de psa_car_controller)
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/bin/python3 /opt/stellantis-ev-companion/app.py
+Environment=CONFIG=/opt/stellantis-ev-companion/config.json
+Restart=always
+DynamicUser=yes
+StateDirectory=stellantis-ev-companion
+
+[Install]
+WantedBy=multi-user.target
