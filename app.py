@@ -350,6 +350,10 @@ function showPct(v){v=+v;$('pct').value=v;$('pv').textContent=v;$('pct').style.s
  document.querySelectorAll('[data-p]').forEach(b=>b.classList.toggle('sel',+b.dataset.p==v));
  $('tick').style.bottom=v+'%';$('tick').hidden=v>=100;
  $('lim').textContent=v<100?'limite '+v+' %':'sans limite';}
+function setSel(id,v){const e=$(id);v=String(v);  // ajoute la valeur enregistree si le menu ne la propose pas
+ if(![...e.options].some(o=>o.value===v)){const o=new Option(v,v);e.add(o);
+  [...e.options].sort((a,b)=>a.value-b.value).forEach(x=>e.add(x));}
+ e.value=v;}
 function showMode(isAuto){$('m_auto').classList.toggle('sel',isAuto);$('m_man').classList.toggle('sel',!isAuto);
  $('p_auto').hidden=!isAuto;$('p_man').hidden=isAuto;}
 let saveT;
@@ -381,14 +385,14 @@ function fill(s){
  $('stopline').hidden=s.auto.enabled;$('stopauto').hidden=!s.auto.enabled;
  $('stopauto').textContent='Heures creuses auto : la charge s’arrête aussi à la fin de chaque plage ('
   +s.auto.plages.map(p=>p.split('–')[1]).join(' et ')+') et reprend à la suivante.';
- const n=s.notif;$('n_plug').checked=n.plug;$('n_time').value=n.plug_time;$('n_lvl').value=String(n.plug_level);
+ const n=s.notif;$('n_plug').checked=n.plug;$('n_time').value=n.plug_time;setSel('n_lvl',n.plug_level);
  $('n_time').disabled=$('n_lvl').disabled=!n.plug;$('n_done').checked=n.done;$('n_peak').checked=n.peak;$('n_topic').textContent=n.topic;
  if(document.activeElement!==$('c_brand'))$('c_brand').value=s.car.brand;if(document.activeElement!==$('c_model'))$('c_model').value=s.car.model;
  document.querySelector('.word').textContent=s.car.brand;document.getElementById('word').hidden=!s.car.brand;document.querySelector('.model b').textContent=s.car.model;document.title=s.car.model;
  const b=s.report;$('b_on').checked=b.enabled;
  if(document.activeElement!==$('b_l100'))$('b_l100').value=b.l100;if(document.activeElement!==$('b_fuel'))$('b_fuel').value=b.fuel;
- const ph=s.preheat;$('ph_on').checked=ph.enabled;$('ph_cold').value=String(ph.cold);$('ph_hot').value=String(ph.hot);
- $('ph_lead').value=String(ph.lead);['ph_cold','ph_hot','ph_lead'].forEach(id=>$(id).disabled=!ph.enabled);
+ const ph=s.preheat;$('ph_on').checked=ph.enabled;setSel('ph_cold',ph.cold);setSel('ph_hot',ph.hot);
+ setSel('ph_lead',ph.lead);['ph_cold','ph_hot','ph_lead'].forEach(id=>$(id).disabled=!ph.enabled);
  $('ph_list').innerHTML=ph.next.map(d=>{const t=d.temp==null?'–':String(d.temp).replace('.',',')+' °C';
   const ic=d.temp==null?'':d.temp<=ph.cold?' ❄️':d.temp>=ph.hot?' ☀️':'';
   const day=new Date(d.date+'T12:00').toLocaleDateString('fr-FR',{weekday:'short',day:'numeric',month:'short'});

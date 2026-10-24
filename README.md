@@ -5,6 +5,17 @@ du groupe Stellantis (Peugeot, Citroën, DS, Opel, Vauxhall…), pensée pour le
 
 *English version below.*
 
+<table>
+  <tr>
+    <td align="center"><img src="docs/accueil-sombre.png" width="220" alt="Accueil, mode sombre, voiture en charge"><br><sub>Accueil (mode sombre, en charge)</sub></td>
+    <td align="center"><img src="docs/accueil-jour.png" width="220" alt="Accueil, mode jour"><br><sub>Accueil (mode jour)</sub></td>
+    <td align="center"><img src="docs/historique.png" width="220" alt="Historique : distance, consommation, coût, graphique par mois"><br><sub>Historique</sub></td>
+    <td align="center"><img src="docs/reglages.png" width="220" alt="Réglages : nom de la voiture, notifications, préchauffage météo"><br><sub>Réglages</sub></td>
+  </tr>
+</table>
+
+<sub>Captures réalisées avec des données fictives.</sub>
+
 ## Ce que ça fait
 
 - **Arrêt de charge fiable à X %** (et/ou à une heure donnée). L'arrêt intégré à psa_car_controller ne se déclenche
@@ -105,7 +116,8 @@ GPL-3.0-or-later, comme psa_car_controller.
 ## English
 
 A phone-friendly companion web page for [psa_car_controller](https://github.com/flobz/psa_car_controller), for
-Stellantis electric cars (Peugeot, Citroën, DS, Opel, Vauxhall…). The UI is in French.
+Stellantis electric cars (Peugeot, Citroën, DS, Opel, Vauxhall…). The UI is in French (screenshots at the top of
+this page, made with fictional data).
 
 **Features:** reliable charge stop at a percentage and/or time (works around psa_car_controller's charge control not
 firing when the cached status lacks the charging state), automatic off-peak charging windows (several windows,
