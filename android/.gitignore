@@ -1,0 +1,11 @@
+# cle de signature : ne jamais publier
+*.keystore
+keystore-pass.txt
+
+build/
+*.apk
+*.idsig
+
+# version personnelle (photo de ta voiture, adresse de ton serveur)
+res-perso/
+server.txt

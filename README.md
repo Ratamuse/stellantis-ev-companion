@@ -30,8 +30,9 @@ du groupe Stellantis (Peugeot, Citroën, DS, Opel, Vauxhall…), pensée pour le
   graphique par mois, compteur kilométrique.
 - **Autonomie « à ton rythme »** : estimée à partir de la consommation réelle des derniers trajets, corrigée par la
   température.
-- **Notifications** sur le téléphone avec [ntfy](https://ntfy.sh) : oubli de branchement, fin de charge, charge
-  interrompue, charge en heures pleines, préchauffage, bilan mensuel.
+- **Notifications** sur le téléphone avec l'appli Android [EV Companion](android/) (sans appli tierce,
+  [ntfy](https://ntfy.sh) en option) : oubli de branchement, fin de charge, charge interrompue, charge en heures
+  pleines, préchauffage, bilan mensuel.
 - Mode **jour / nuit**, interface en français.
 
 ## Prérequis
@@ -52,8 +53,8 @@ sudo cp deploy/stellantis-ev-companion.service /etc/systemd/system/
 sudo systemctl daemon-reload && sudo systemctl enable --now stellantis-ev-companion
 ```
 
-La page est alors sur `http://<adresse-du-serveur>:8080`. Dans **⚙️ Réglages**, abonne-toi au sujet ntfy affiché
-dans l'appli ntfy, puis active les fonctions voulues.
+La page est alors sur `http://<adresse-du-serveur>:8080`. Installe l'appli Android (voir plus bas), puis active
+les fonctions voulues dans **⚙️ Réglages**.
 
 Une voiture générique (vue 3/4) est affichée en haut de la page. Pour mettre la photo de ta voiture, dépose
 `car.png` (ou `.webp`, `.jpg`, fond transparent) à côté de `app.py`. N'utilise pas d'images protégées si tu publies
@@ -82,21 +83,27 @@ appareils : le téléphone voit le serveur comme s'il était à la maison, où q
 Bonus : avec Tailscale, tu peux aussi te connecter en SSH au serveur depuis n'importe où et fermer tout port ouvert
 sur ta box.
 
-## Notifications sur le téléphone : ntfy
+## Appli Android et notifications
 
-La page envoie ses notifications avec [ntfy](https://ntfy.sh), une appli gratuite (Android et iPhone) qui ne demande
-pas de compte.
+L'appli **EV Companion** affiche la page en plein écran et reçoit ses notifications en quelques secondes, sans appli
+tierce ni compte : elle garde une connexion permanente avec ton serveur, et rien ne passe par un service extérieur.
 
-1. Installe l'appli **ntfy** sur le téléphone.
-2. Dans la page, ouvre **⚙️ Réglages** : la carte *Notifications* affiche ton **sujet**, tiré au hasard au premier
-   lancement (par exemple `ev-8a98a85fba109e95`).
-3. Dans ntfy, appuie sur **+**, colle ce sujet, garde le serveur `ntfy.sh` et valide.
-4. Appuie sur **Envoyer une notification de test** dans la page : elle doit arriver en quelques secondes.
+1. Télécharge `ev-companion.apk` dans les [Releases](https://github.com/Ratamuse/stellantis-ev-companion/releases)
+   et installe-le sur le téléphone.
+2. Au premier lancement, indique l'adresse du serveur (par exemple `http://100.x.y.z:8080` avec Tailscale).
+3. Appuie sur **Autoriser les notifications** puis **Ne pas optimiser la batterie**, et **Tester la connexion**.
+4. Dans la page, **⚙️ Réglages** → **Envoyer une notification de test** : elle doit arriver en quelques secondes.
 5. Choisis les alertes voulues (oubli de branchement, fin de charge, charge en heures pleines…).
 
-Les messages passent par le service public ntfy.sh : quiconque connaît le sujet peut les lire. Ils ne contiennent ni
-position ni identifiants, seulement niveaux de batterie, coûts et températures. Ne partage pas ton sujet. Pour un
-contrôle total, tu peux héberger ton propre serveur ntfy et changer `NTFY_SERVER` dans `app.py`.
+Détails et fabrication de l'APK : [android/README.md](android/README.md). Sur iPhone, il n'y a pas d'appli : ajoute
+la page à l'écran d'accueil et utilise ntfy pour les notifications.
+
+**Option ntfy.** Pour recevoir aussi les notifications avec [ntfy](https://ntfy.sh) (iPhone, ordinateur…), active
+*Aussi par l'appli ntfy* dans la carte *Notifications*, installe l'appli ntfy et abonne-toi au **sujet** affiché
+(tiré au hasard, par exemple `ev-8a98a85fba109e95`, serveur `ntfy.sh`). Ces messages passent alors par le service
+public ntfy.sh : quiconque connaît le sujet peut les lire. Ils ne contiennent ni position ni identifiants, seulement
+niveaux de batterie, coûts et températures. Ne partage pas ton sujet. Tu peux aussi héberger ton propre serveur ntfy
+et changer `NTFY_SERVER` dans `app.py`.
 
 ## Réglages (`config.json`)
 
@@ -137,14 +144,14 @@ fournie par l'API utilisée (coordonnées nulles), alors que l'appli officielle 
 
 - **N'expose jamais la page ni psa_car_controller sur Internet** : elles n'ont pas de mot de passe et pilotent la
   voiture. Utilise Tailscale (ou un VPN) ; ne redirige aucun port sur ta box.
-- Le sujet ntfy est tiré au hasard ; quiconque le connaît peut lire les notifications (pas de position ni
-  d'identifiants dedans).
+- Les notifications de l'appli Android ne passent que par ton serveur. Si tu actives ntfy en option, le sujet est
+  tiré au hasard ; quiconque le connaît peut lire ces notifications (pas de position ni d'identifiants dedans).
 
 ## Limites
 
 - Testé sur une Peugeot e-208 (2021) ; les autres modèles Stellantis compatibles avec psa_car_controller devraient
   fonctionner, sans garantie.
-- Interface en français uniquement.
+- Page web en français uniquement (l'appli Android est en français, anglais, espagnol, italien et allemand).
 - Projet personnel, sans lien avec Stellantis. Les noms de marques appartiennent à leurs propriétaires.
 
 ## Licence
@@ -158,8 +165,8 @@ GPL-3.0-or-later, comme psa_car_controller.
 A phone-friendly companion web page for [psa_car_controller](https://github.com/flobz/psa_car_controller), for
 Stellantis electric cars (Peugeot, Citroën, DS, Opel, Vauxhall…).
 
-The screenshots at the top of this page were made with fictional data. The interface is currently in French only
-(see [Limitations](#limitations)).
+The screenshots at the top of this page were made with fictional data. The web page is currently in French only
+(see [Limitations](#limitations)); the Android app is translated.
 
 ### What it does
 
@@ -174,8 +181,9 @@ The screenshots at the top of this page were made with fictional data. The inter
 - **History**: trips, consumption, charges and their **cost** (peak / off-peak prices from psa_car_controller),
   monthly chart, odometer.
 - **"At your pace" range**: estimated from the real consumption of your recent trips, corrected for temperature.
-- **Phone notifications** with [ntfy](https://ntfy.sh): car not plugged in, charge finished, charge interrupted, charge
-  started during peak hours, preconditioning, monthly report.
+- **Phone notifications** with the [EV Companion](android/) Android app (no third-party app, [ntfy](https://ntfy.sh)
+  optional): car not plugged in, charge finished, charge interrupted, charge started during peak hours,
+  preconditioning, monthly report.
 - **Day / night** theme.
 
 ### Requirements
@@ -196,8 +204,8 @@ sudo cp deploy/stellantis-ev-companion.service /etc/systemd/system/
 sudo systemctl daemon-reload && sudo systemctl enable --now stellantis-ev-companion
 ```
 
-The page is then available at `http://<server-address>:8080`. In **⚙️ Réglages** (settings), subscribe to the ntfy
-topic shown there in the ntfy app, then enable the features you want.
+The page is then available at `http://<server-address>:8080`. Install the Android app (see below), then enable the
+features you want in **⚙️ Réglages** (settings).
 
 A generic car (3/4 view) is shown at the top of the page. To use a photo of your own car, put `car.png` (or `.webp`,
 `.jpg`, with a transparent background) next to `app.py`. Do not use copyrighted images if you publish your setup.
@@ -224,20 +232,29 @@ phone sees the server as if it were at home, wherever you are.
 
 Bonus: with Tailscale you can also SSH into the server from anywhere, and close every port open on your router.
 
-### Phone notifications: ntfy
+### Android app and notifications
 
-The page sends its notifications with [ntfy](https://ntfy.sh), a free app (Android and iPhone) that needs no account.
+The **EV Companion** app shows the page full screen and receives its notifications within seconds, with no
+third-party app and no account: it keeps a permanent connection to your server, and nothing goes through an outside
+service.
 
-1. Install the **ntfy** app on your phone.
-2. In the page, open **⚙️ Réglages**: the *Notifications* card shows your **topic**, picked at random on first start
-   (for example `ev-8a98a85fba109e95`).
-3. In ntfy, tap **+**, paste the topic, keep the `ntfy.sh` server and confirm.
-4. Tap **Envoyer une notification de test** (send a test notification) in the page: it should arrive within seconds.
+1. Download `ev-companion.apk` from the [Releases](https://github.com/Ratamuse/stellantis-ev-companion/releases) and
+   install it on your phone.
+2. On first launch, enter the server's address (for example `http://100.x.y.z:8080` with Tailscale).
+3. Tap **Allow notifications**, then **Don't optimise battery**, and **Test the connection**.
+4. In the page, **⚙️ Réglages** → **Envoyer une notification de test** (send a test notification): it should arrive
+   within seconds.
 5. Choose the alerts you want (car not plugged in, charge finished, charging during peak hours…).
 
-Messages go through the public ntfy.sh service: anyone who knows the topic can read them. They contain no location
-and no credentials, only battery levels, costs and temperatures. Do not share your topic. For full control, you can
-host your own ntfy server and change `NTFY_SERVER` in `app.py`.
+Details and how to build the APK: [android/README.md](android/README.md). There is no iPhone app: add the page to your
+home screen and use ntfy for notifications.
+
+**ntfy option.** To also receive notifications with [ntfy](https://ntfy.sh) (iPhone, computer…), turn on *Aussi par
+l'appli ntfy* (also via the ntfy app) in the *Notifications* card, install the ntfy app and subscribe to the **topic**
+shown (random, for example `ev-8a98a85fba109e95`, server `ntfy.sh`). Those messages then go through the public ntfy.sh
+service: anyone who knows the topic can read them. They contain no location and no credentials, only battery levels,
+costs and temperatures. Do not share your topic. You can also host your own ntfy server and change `NTFY_SERVER` in
+`app.py`.
 
 ### Settings (`config.json`)
 
@@ -277,13 +294,14 @@ the API used (null coordinates), even though the official app shows it.
 
 - **Never expose the page or psa_car_controller to the Internet**: they have no password and control the car. Use
   Tailscale (or a VPN); do not forward any port on your router.
-- The ntfy topic is random; anyone who knows it can read the notifications (they contain no location or credentials).
+- Android app notifications only go through your server. If you turn on the ntfy option, the topic is random;
+  anyone who knows it can read those notifications (they contain no location or credentials).
 
 ### Limitations
 
 - Tested on a Peugeot e-208 (2021); other Stellantis models supported by psa_car_controller should work, with no
   guarantee.
-- French interface only for now.
+- Web page in French only for now (the Android app is in English, French, Spanish, Italian and German).
 - Personal project, not affiliated with Stellantis. Brand names belong to their owners.
 
 ### License

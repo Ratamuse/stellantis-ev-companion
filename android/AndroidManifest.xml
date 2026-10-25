@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="fr.ratamuse.garee"
+    android:versionCode="6"
+    android:versionName="6.0">
+
+    <uses-sdk android:minSdkVersion="26" android:targetSdkVersion="34" />
+
+    <!-- envoi de la position au serveur (par Tailscale) -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <!-- position du telephone, y compris quand l'appli n'est pas ouverte -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+    <!-- liste des appareils Bluetooth appaires, pour choisir la voiture -->
+    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <!-- trace GPS pendant le trajet (service de premier plan avec notification "Trajet en cours") -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- relancer la verification des notifications apres un redemarrage du telephone -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- connexion permanente au serveur pour des notifications instantanees -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+
+    <application
+        android:label="e-208"
+        android:icon="@mipmap/ic_launcher"
+        android:allowBackup="false"
+        android:usesCleartextTraffic="true">
+
+        <!-- la page du serveur en plein ecran -->
+        <activity android:name=".MainActivity" android:exported="true"
+            android:theme="@android:style/Theme.DeviceDefault.NoActionBar"
+            android:configChanges="orientation|screenSize|keyboardHidden">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- reglages propres a l'appli : serveur, Bluetooth de la voiture, autorisations -->
+        <activity android:name=".SetupActivity" android:exported="false"
+            android:label="Réglages de l’appli" />
+
+        <!-- reveille l'appli quand un appareil Bluetooth se connecte (depart) ou se deconnecte (arrivee) -->
+        <receiver android:name=".BtReceiver" android:exported="true">
+            <intent-filter>
+                <action android:name="android.bluetooth.device.action.ACL_CONNECTED" />
+                <action android:name="android.bluetooth.device.action.ACL_DISCONNECTED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- notifications du serveur : verification periodique, relancee au demarrage et apres mise a jour -->
+        <receiver android:name=".NotifReceiver" android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+
+        <service android:name=".PushService" android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Notifications instantanees envoyees par le serveur personnel de l'utilisateur" />
+        </service>
+
+        <service android:name=".TrackService" android:exported="false"
+            android:foregroundServiceType="location" />
+    </application>
+</manifest>

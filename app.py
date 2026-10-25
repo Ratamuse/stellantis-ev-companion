@@ -270,6 +270,12 @@ select:disabled{opacity:.3}
  <div class="hint">Affiché en haut de la page. Pour remplacer la voiture générique par ta photo, dépose car.png (ou .webp, .jpg, fond transparent) à côté de app.py.</div>
 </section>
 
+<section class="card" id="appcard" hidden>
+ <h2><svg class="i" viewBox="0 0 24 24"><rect x="6" y="2" width="12" height="20" rx="2"/><path d="M11 18h2"/></svg>Appli Android</h2>
+ <div class="hint" style="margin:0 0 10px">Adresse du serveur, autorisation des notifications.</div>
+ <a class="btn ghost" href="garee://setup" style="text-decoration:none">Réglages de l’appli</a>
+</section>
+
 <section class="card">
  <h2><svg class="i" viewBox="0 0 24 24"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>Notifications</h2>
  <div class="line" style="border:0;margin-top:0;padding-top:0">
@@ -285,8 +291,10 @@ select:disabled{opacity:.3}
  <div class="line"><span>Fin de charge ou interruption</span><label class="switch"><input type="checkbox" id="n_done"><span></span></label></div>
  <div class="line"><span>Charge en heures pleines</span><label class="switch"><input type="checkbox" id="n_peak"><span></span></label></div>
  <div class="line" style="display:block">
-  <div class="hint" style="margin:0 0 8px">Dans l'appli <b>ntfy</b>, abonne-toi à ce sujet :</div>
-  <div class="topic" id="n_topic">–</div>
+  <div class="hint" style="margin:0 0 8px">Les notifications s'affichent dans l'appli Android EV Companion.</div>
+  <div class="row" style="align-items:center;justify-content:space-between"><span>Aussi par l'appli ntfy</span>
+   <label class="switch"><input type="checkbox" id="n_ntfy"><span></span></label></div>
+  <div id="n_ntfybox"><div class="hint" style="margin:8px 0">Dans l'appli ntfy, abonne-toi à ce sujet :</div><div class="topic" id="n_topic">–</div></div>
  </div>
  <button class="btn ghost" id="n_test">Envoyer une notification de test</button>
 </section>
@@ -387,7 +395,7 @@ function fill(s){
  $('stopauto').textContent='Heures creuses auto : la charge s’arrête aussi à la fin de chaque plage ('
   +s.auto.plages.map(p=>p.split('–')[1]).join(' et ')+') et reprend à la suivante.';
  const n=s.notif;$('n_plug').checked=n.plug;$('n_time').value=n.plug_time;setSel('n_lvl',n.plug_level);
- $('n_time').disabled=$('n_lvl').disabled=!n.plug;$('n_done').checked=n.done;$('n_peak').checked=n.peak;$('n_topic').textContent=n.topic;
+ $('n_time').disabled=$('n_lvl').disabled=!n.plug;$('n_done').checked=n.done;$('n_peak').checked=n.peak;$('n_topic').textContent=n.topic;$('n_ntfy').checked=!!n.ntfy;$('n_ntfybox').hidden=!n.ntfy;
  if(document.activeElement!==$('c_brand'))$('c_brand').value=s.car.brand;if(document.activeElement!==$('c_model'))$('c_model').value=s.car.model;
  document.querySelector('.word').textContent=s.car.brand;document.getElementById('word').hidden=!s.car.brand;document.querySelector('.model b').textContent=s.car.model;document.title=s.car.model;
  const b=s.report;$('b_on').checked=b.enabled;
@@ -425,8 +433,8 @@ $('pon').onchange=progUi;
 dayBtns.forEach(b=>b.onclick=()=>b.classList.toggle('sel'));
 $('refresh').onclick=refresh;
 function saveNotif(){act('api/notif',{plug:$('n_plug').checked,plug_time:$('n_time').value,plug_level:+$('n_lvl').value,
- done:$('n_done').checked,peak:$('n_peak').checked},'Notifications enregistrées ✔');}
-['n_plug','n_time','n_lvl','n_done','n_peak'].forEach(id=>$(id).onchange=saveNotif);
+ done:$('n_done').checked,peak:$('n_peak').checked,ntfy:$('n_ntfy').checked},'Notifications enregistrées ✔');}
+['n_plug','n_time','n_lvl','n_done','n_peak','n_ntfy'].forEach(id=>$(id).onchange=saveNotif);
 ['b_on','b_l100','b_fuel'].forEach(id=>$(id).onchange=()=>act('api/report',{enabled:$('b_on').checked,
  l100:+$('b_l100').value,fuel:+$('b_fuel').value},'Bilan mensuel enregistré ✔'));
 $('b_now').onclick=()=>act('api/report_now',{},'Bilan envoyé ✔');
@@ -444,6 +452,7 @@ $('psave').onclick=()=>act('api/clim_prog',{enabled:$('pon').checked,time:$('pti
  days:dayBtns.filter(b=>b.classList.contains('sel')).map(b=>+b.dataset.d)},'Programmation enregistrée ✔');
 function view(){const s=location.hash=='#reglages';$('v_main').hidden=s;$('v_set').hidden=!s;window.scrollTo(0,0);}
 window.onhashchange=view;view();
+if(/VoitureGaree/.test(navigator.userAgent))$('appcard').hidden=false;  // page ouverte dans l'appli Android
 showPct(80);refresh();
 </script></body></html>"""
 
@@ -1124,9 +1133,14 @@ def history(_data=None):
             "day_price": day, "night_price": night, "efficiency": eff, "min_trip": min_trip}
 
 
-# ---- Notifications sur le telephone (ntfy) ----
+# ---- Notifications sur le telephone : appli Android EV Companion (et, en option, ntfy) ----
 
-notif = {"topic": None, "plug": True, "plug_time": "21:00", "plug_level": 50, "done": True, "peak": True}
+notif = {"topic": None, "plug": True, "plug_time": "21:00", "plug_level": 50, "done": True, "peak": True,
+         "ntfy": False}  # ntfy : envoyer aussi par l'appli ntfy (sinon seule l'appli EV Companion les affiche)
+NOTIF_LOG_FILE = os.path.join(STATE_DIR, "notifs.json")
+notif_log = []  # [{"id", "at", "title", "message", "priority"}] : l'appli Android vient les chercher
+notif_cond = threading.Condition(lock)  # reveille les appels longs de l'appli des qu'une notification arrive
+app_live = [0]  # nombre de connexions permanentes de l'appli en cours
 ns = {"prev": None, "start_level": None, "start_at": None, "forced": False, "plug_day": None}  # etat en memoire
 
 
@@ -1138,7 +1152,10 @@ def save_notif():
 def load_notif():
     try:
         with open(NOTIF_FILE) as f:
-            notif.update(json.load(f))
+            saved = json.load(f)
+        notif.update(saved)
+        if "ntfy" not in saved:  # installation d'avant l'appli Android : elle continue avec ntfy
+            notif["ntfy"] = True
     except (OSError, ValueError):
         pass
     if not notif["topic"]:  # sujet secret : quiconque le connait peut lire les notifications
@@ -1147,12 +1164,59 @@ def load_notif():
 
 
 def ntfy(title, message, tags=(), priority=3):
+    """Notification : ajoutee au journal lu par l'appli EV Companion et, si active, envoyee par ntfy."""
+    with lock:
+        nid = (notif_log[-1]["id"] if notif_log else 0) + 1
+        notif_log.append({"id": nid, "at": datetime.now().isoformat(timespec="seconds"), "title": title,
+                          "message": message, "priority": priority})
+        del notif_log[:-200]
+        with open(NOTIF_LOG_FILE, "w") as f:
+            json.dump(notif_log, f)
+        notif_cond.notify_all()  # l'appli connectee la recoit tout de suite
+    if not notif.get("ntfy"):
+        print("Notification (appli) :", title, flush=True)
+        return
     body = json.dumps({"topic": notif["topic"], "title": title, "message": message,
                        "tags": list(tags), "priority": priority}).encode()
     req = urllib.request.Request(NTFY_SERVER, body, {"Content-Type": "application/json"})
     with urllib.request.urlopen(req, timeout=20) as r:
         r.read()
     print("Notification :", title, flush=True)
+
+
+def load_notif_log():
+    try:
+        with open(NOTIF_LOG_FILE) as f:
+            notif_log.extend(json.load(f))
+    except (OSError, ValueError):
+        pass
+
+
+def notifs_since(after):
+    """GET /api/notifs?after=<id> : notifications plus recentes que <id> (verification periodique de l'appli)."""
+    with lock:
+        items = [n for n in notif_log if n["id"] > after]
+        last = notif_log[-1]["id"] if notif_log else 0
+    return {"last": last, "items": items[-20:]}
+
+
+def notifs_wait(after, timeout):
+    """GET /api/notifs/wait : repond des qu'une notification plus recente que <after> existe, sinon apres <timeout> s."""
+    timeout = max(1, min(int(timeout), 120))
+    deadline = time.monotonic() + timeout
+    with notif_cond:
+        app_live[0] += 1
+        try:
+            while True:
+                items = [n for n in notif_log if n["id"] > after]
+                left = deadline - time.monotonic()
+                if items or left <= 0:
+                    break
+                notif_cond.wait(left)
+        finally:
+            app_live[0] -= 1
+        last = notif_log[-1]["id"] if notif_log else 0
+    return {"last": last, "items": items[-20:]}
 
 
 def fr(x, decimals):
@@ -1286,7 +1350,7 @@ def set_notif(data):
         raise ValueError("seuil hors limites")
     with lock:
         notif.update(plug=bool(data.get("plug")), plug_time=plug_time, plug_level=plug_level,
-                     done=bool(data.get("done")), peak=bool(data.get("peak")))
+                     done=bool(data.get("done")), peak=bool(data.get("peak")), ntfy=bool(data.get("ntfy")))
         save_notif()
     return state()
 
@@ -1944,6 +2008,12 @@ class Handler(BaseHTTPRequestHandler):
             self.send_image("car")
         elif self.path == "/logo":
             self.send_image("logo")
+        elif self.path.startswith("/api/notifs/wait"):
+            q = dict(urllib.parse.parse_qsl(urllib.parse.urlsplit(self.path).query))
+            self.send(200, notifs_wait(int(q.get("after") or 0), int(q.get("timeout") or 50)))
+        elif self.path.startswith("/api/notifs"):
+            q = dict(urllib.parse.parse_qsl(urllib.parse.urlsplit(self.path).query))
+            self.send(200, notifs_since(int(q.get("after") or 0)))
         elif self.path == "/api/state":
             try:
                 self.send(200, state())
@@ -1980,6 +2050,7 @@ if __name__ == "__main__":
     load_prog()
     load_auto()
     load_notif()
+    load_notif_log()
     load_car()
     load_preheat()
     load_report()
