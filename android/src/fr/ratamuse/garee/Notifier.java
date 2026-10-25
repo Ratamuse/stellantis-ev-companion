@@ -81,7 +81,10 @@ final class Notifier {
         NotificationManager nm = ctx.getSystemService(NotificationManager.class);
         nm.createNotificationChannel(new NotificationChannel(ALERTS, Tr.t("Alertes"), NotificationManager.IMPORTANCE_HIGH));
         nm.createNotificationChannel(new NotificationChannel(INFOS, Tr.t("Informations"), NotificationManager.IMPORTANCE_DEFAULT));
-        PendingIntent open = PendingIntent.getActivity(ctx, 0, new Intent(ctx, MainActivity.class),
+        Intent show = new Intent(ctx, MainActivity.class) // l'appli s'ouvre sur le message complet
+                .putExtra("notif_title", title).putExtra("notif_message", message)
+                .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        PendingIntent open = PendingIntent.getActivity(ctx, (int) (id % Integer.MAX_VALUE), show,
                 PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
         Notification n = new Notification.Builder(ctx, priority >= 4 ? ALERTS : INFOS)
                 .setSmallIcon(android.R.drawable.ic_lock_idle_charging)

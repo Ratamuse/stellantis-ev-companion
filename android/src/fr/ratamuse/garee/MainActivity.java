@@ -1,6 +1,7 @@
 package fr.ratamuse.garee;
 
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
@@ -56,6 +57,27 @@ public class MainActivity extends Activity {
         });
         setContentView(web);
         load();
+        showNotification(getIntent());
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        showNotification(intent);
+    }
+
+    /** Ouverte depuis une notification : affiche son message en entier. */
+    private void showNotification(Intent intent) {
+        String message = intent == null ? null : intent.getStringExtra("notif_message");
+        if (message == null) {
+            return;
+        }
+        new AlertDialog.Builder(this)
+                .setTitle(intent.getStringExtra("notif_title"))
+                .setMessage(message)
+                .setPositiveButton("OK", null)
+                .show();
+        intent.removeExtra("notif_message"); // pas de nouvel affichage en revenant sur l'appli
     }
 
     @Override
