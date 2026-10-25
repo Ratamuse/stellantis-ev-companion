@@ -3,7 +3,7 @@
 Page web compagnon de [psa_car_controller](https://github.com/flobz/psa_car_controller) pour les voitures électriques
 du groupe Stellantis (Peugeot, Citroën, DS, Opel, Vauxhall…), pensée pour le téléphone.
 
-*English version below.*
+*[English version below](#english).*
 
 <table>
   <tr>
@@ -55,8 +55,9 @@ sudo systemctl daemon-reload && sudo systemctl enable --now stellantis-ev-compan
 La page est alors sur `http://<adresse-du-serveur>:8080`. Dans **⚙️ Réglages**, abonne-toi au sujet ntfy affiché
 dans l'appli ntfy, puis active les fonctions voulues.
 
-Photo facultative : dépose `car.png` (ou `.webp`, `.jpg`, fond transparent) à côté de `app.py`. Sans photo, une
-silhouette neutre est affichée. N'utilise pas d'images protégées si tu publies ton installation.
+Une voiture générique (vue 3/4) est affichée en haut de la page. Pour mettre la photo de ta voiture, dépose
+`car.png` (ou `.webp`, `.jpg`, fond transparent) à côté de `app.py`. N'utilise pas d'images protégées si tu publies
+ton installation.
 
 ## Accès depuis le téléphone, sans ouvrir de port : Tailscale
 
@@ -155,31 +156,136 @@ GPL-3.0-or-later, comme psa_car_controller.
 ## English
 
 A phone-friendly companion web page for [psa_car_controller](https://github.com/flobz/psa_car_controller), for
-Stellantis electric cars (Peugeot, Citroën, DS, Opel, Vauxhall…). The UI is in French (screenshots at the top of
-this page, made with fictional data).
+Stellantis electric cars (Peugeot, Citroën, DS, Opel, Vauxhall…).
 
-**Features:** reliable charge stop at a percentage and/or time (works around psa_car_controller's charge control not
-firing when the cached status lacks the charging state), automatic off-peak charging windows (several windows,
-suspend at window end, re-defer when a charge starts in peak hours), climate control with weekday schedule and
-**weather-based preconditioning** (Open-Meteo), trip / consumption / charge-cost history, "at your pace" range
-estimate, [ntfy](https://ntfy.sh) push notifications, day/night theme.
+The screenshots at the top of this page were made with fictional data. The interface is currently in French only
+(see [Limitations](#limitations)).
 
-**Requirements:** a working psa_car_controller with remote commands enabled; Python ≥ 3.9 (standard library only);
-Tailscale or a VPN recommended — never expose the page or psa_car_controller to the Internet.
+### What it does
 
-**Install:** copy `app.py` and `config.example.json` → `config.json` (set your VIN, off-peak windows, departures),
-install `deploy/stellantis-ev-companion.service`, enable it, open `http://<server>:8080`.
+- **Reliable charge stop at X %** (and/or at a given time). psa_car_controller's built-in stop does not fire when the
+  charging state is missing from its cache (see [Why this project](#why-this-project)): this page queries the API
+  directly and stops the charge itself.
+- **Automatic off-peak charging**: the delayed-charge start time is moved to the next off-peak window (several windows
+  supported), charging is paused at the end of a window and resumes at the next one. A charge that starts during peak
+  hours is put back on hold.
+- **Air conditioning / heating**: start now, weekday schedule, and **weather-based preconditioning**
+  ([Open-Meteo](https://open-meteo.com)): before a departure, it only starts if it is cold or hot outside.
+- **History**: trips, consumption, charges and their **cost** (peak / off-peak prices from psa_car_controller),
+  monthly chart, odometer.
+- **"At your pace" range**: estimated from the real consumption of your recent trips, corrected for temperature.
+- **Phone notifications** with [ntfy](https://ntfy.sh): car not plugged in, charge finished, charge interrupted, charge
+  started during peak hours, preconditioning, monthly report.
+- **Day / night** theme.
 
-**Phone access:** install [Tailscale](https://tailscale.com) on the server (`curl -fsSL https://tailscale.com/install.sh | sh`
-then `sudo tailscale up`) and on your phone with the same account (enable 2FA on it, disable key expiry for the
-server), then open `http://<server-name>:8080`. Do not forward any port on your router.
+### Requirements
 
-**Notifications:** install the [ntfy](https://ntfy.sh) app, subscribe to the random topic shown in ⚙️ Réglages, and
-press the test button. Messages go through the public ntfy.sh server; keep the topic private.
+- A working psa_car_controller (Docker or pip), with remote commands enabled (SMS code + PIN).
+- Python 3.9 or newer. **No dependencies**: standard library only.
+- Recommended: [Tailscale](https://tailscale.com) to reach the page from your phone.
 
-**Why:** on a 2021 e-208, psa_car_controller constantly logs `charging status not available from api`; its charge
-control therefore never sees the car charging and never stops it. This page polls the API with `from_cache=0` and
-stops the charge itself by setting the delayed-charge hour to a time already passed (`/charge_hour`), which makes the
-car wait until the next day. See the French section above for details.
+### Installation (Raspberry Pi / Linux)
 
-License: GPL-3.0-or-later. Not affiliated with Stellantis.
+```bash
+sudo mkdir -p /opt/stellantis-ev-companion
+sudo cp app.py config.example.json /opt/stellantis-ev-companion/
+cd /opt/stellantis-ev-companion
+sudo cp config.example.json config.json
+sudo nano config.json            # VIN, off-peak windows, departures...
+sudo cp deploy/stellantis-ev-companion.service /etc/systemd/system/
+sudo systemctl daemon-reload && sudo systemctl enable --now stellantis-ev-companion
+```
+
+The page is then available at `http://<server-address>:8080`. In **⚙️ Réglages** (settings), subscribe to the ntfy
+topic shown there in the ntfy app, then enable the features you want.
+
+A generic car (3/4 view) is shown at the top of the page. To use a photo of your own car, put `car.png` (or `.webp`,
+`.jpg`, with a transparent background) next to `app.py`. Do not use copyrighted images if you publish your setup.
+
+### Phone access without opening a port: Tailscale
+
+The page controls the car and has no password: it must **never** be reachable from the Internet (no port forwarding
+on your router). [Tailscale](https://tailscale.com) creates an encrypted private network between your devices: your
+phone sees the server as if it were at home, wherever you are.
+
+1. Create an account on tailscale.com (sign in with Google, Microsoft, Apple or GitHub) and **turn on two-factor
+   authentication** for that account: it is what protects access.
+2. On the server:
+   ```bash
+   curl -fsSL https://tailscale.com/install.sh | sh
+   sudo tailscale up
+   ```
+   Open the link that is printed and sign in with the same account.
+3. In the Tailscale admin console (*Machines*), open the server's "…" menu → **Disable key expiry**, otherwise it gets
+   disconnected after 180 days.
+4. On the phone, install the **Tailscale** app, sign in with the same account and turn it on.
+5. Open `http://<server-name>:8080` (or `http://100.x.y.z:8080`, the address given by `tailscale ip -4`) and add the
+   page to your home screen.
+
+Bonus: with Tailscale you can also SSH into the server from anywhere, and close every port open on your router.
+
+### Phone notifications: ntfy
+
+The page sends its notifications with [ntfy](https://ntfy.sh), a free app (Android and iPhone) that needs no account.
+
+1. Install the **ntfy** app on your phone.
+2. In the page, open **⚙️ Réglages**: the *Notifications* card shows your **topic**, picked at random on first start
+   (for example `ev-8a98a85fba109e95`).
+3. In ntfy, tap **+**, paste the topic, keep the `ntfy.sh` server and confirm.
+4. Tap **Envoyer une notification de test** (send a test notification) in the page: it should arrive within seconds.
+5. Choose the alerts you want (car not plugged in, charge finished, charging during peak hours…).
+
+Messages go through the public ntfy.sh service: anyone who knows the topic can read them. They contain no location
+and no credentials, only battery levels, costs and temperatures. Do not share your topic. For full control, you can
+host your own ntfy server and change `NTFY_SERVER` in `app.py`.
+
+### Settings (`config.json`)
+
+| Key | Purpose | Example |
+|---|---|---|
+| `vin` | Vehicle VIN (required) | `"VR3XXXXXXXXXXXXXX"` |
+| `psacc_url` | psa_car_controller address | `"http://127.0.0.1:5000"` |
+| `port` | Page port | `8080` |
+| `brand`, `model` | Displayed name (can also be changed in the settings) | `"Peugeot"`, `"e-208"` |
+| `battery_kwh` | Usable battery capacity | `46` |
+| `offpeak` | Off-peak windows `[start, end]` | `[["22:00", "06:00"]]` |
+| `departures` | Usual departures for preconditioning: days (0 = Monday), time, place | see the example |
+| `weather` | Reference place for the temperature (otherwise the first departure) | `{"place": "Lyon", "lat": 45.76, "lon": 4.84}` |
+| `commute` | Typical trip shown with the range (optional) | `{"label": "Home ↔ Work", "km": 25}` |
+
+Settings changed in the page (limits, notifications, schedules…) are saved in the state directory (the systemd
+service's `StateDirectory`, otherwise next to `app.py`).
+
+### Why this project
+
+On at least one Peugeot e-208 (2021), the psa_car_controller log keeps showing
+`charging status not available from api`: the charging state is missing from the cached data, while a fresh request
+(`/get_vehicleinfo/<vin>?from_cache=0`) does return it. As a result, charge control (`percentage_threshold`,
+`stop_hour`) never sees the car as "charging" and **never stops it**; the charge history has no end and no cost.
+
+This page works around the problem:
+- it queries the API with `from_cache=0` every 5 minutes (every 2 minutes while charging);
+- to stop a charge, it sets the delayed-charge time to a time **already passed** (`/charge_hour`): the car then waits
+  until the next day (the same technique as psa_car_controller's "postpone");
+- it records the start, end, percentages and cost of each charge itself.
+
+Other findings: on this car, charging switches back to **immediate charging every time it is plugged in**; sending
+the delayed-charge command again once plugged in puts it back on hold (blue LED). The GPS position is not provided by
+the API used (null coordinates), even though the official app shows it.
+
+### Security
+
+- **Never expose the page or psa_car_controller to the Internet**: they have no password and control the car. Use
+  Tailscale (or a VPN); do not forward any port on your router.
+- The ntfy topic is random; anyone who knows it can read the notifications (they contain no location or credentials).
+
+### Limitations
+
+- Tested on a Peugeot e-208 (2021); other Stellantis models supported by psa_car_controller should work, with no
+  guarantee.
+- French interface only for now.
+- Personal project, not affiliated with Stellantis. Brand names belong to their owners.
+
+### License
+
+GPL-3.0-or-later, like psa_car_controller.
