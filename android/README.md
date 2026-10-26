@@ -52,10 +52,9 @@ A small companion Android app for stellantis-ev-companion: no ads, no account, n
 2. On first launch, enter your server's address (for example `http://100.x.y.z:8080` with Tailscale), then **Save**.
 3. **Allow notifications**, then **Don't optimise battery**: otherwise Android cuts the permanent connection and
    notifications arrive late.
-4. **Test the connection**. Then, in the page: ⚙️ Réglages → *Envoyer une notification de test* (send a test
-   notification).
+4. **Test the connection**. Then, in the page: ⚙️ Settings → *Send a test notification*.
 
-The app settings remain available from the page: ⚙️ Réglages → *Appli Android*.
+The app settings remain available from the page: ⚙️ Settings → *Android app*.
 
 ### Building the APK
 

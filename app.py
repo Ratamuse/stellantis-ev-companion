@@ -45,6 +45,116 @@ APP_DIR = os.path.dirname(os.path.abspath(__file__))
 LOGO_TYPES = {"svg": "image/svg+xml", "png": "image/png", "webp": "image/webp", "jpg": "image/jpeg"}
 LATE_LIMIT = timedelta(minutes=10)  # au-dela (ex. Raspberry eteint), on saute ce declenchement
 
+# ---- Langues : la page, l'historique et les notifications suivent la langue du telephone (ou celle choisie) ----
+try:
+    from i18n import TR  # {"texte francais": {"en": ..., "es": ..., "it": ..., "de": ...}}
+except ImportError:
+    TR = {}
+LANGS = ("fr", "en", "es", "it", "de")
+LANG_FILE = os.path.join(STATE_DIR, "lang.json")
+lang = {"choice": "auto", "seen": "fr"}  # choice : "auto" (langue du telephone) ou une des LANGS
+
+
+def cur_lang():
+    return lang["choice"] if lang["choice"] in LANGS else lang["seen"]
+
+
+def tl(text, code=None):
+    """Traduction d'un texte francais dans la langue courante (le texte tel quel s'il n'est pas traduit)."""
+    code = code or cur_lang()
+    return text if code == "fr" else TR.get(text, {}).get(code, text)
+
+
+def load_lang():
+    try:
+        with open(LANG_FILE) as f:
+            lang.update(json.load(f))
+    except (OSError, ValueError):
+        pass
+
+
+def save_lang():
+    with open(LANG_FILE, "w") as f:
+        json.dump(lang, f)
+
+
+def note_lang(header):
+    """Retient la langue du telephone (en-tete Accept-Language) pour les notifications envoyees plus tard."""
+    for part in (header or "").split(","):
+        code = part.split(";")[0].strip()[:2].lower()
+        if code in LANGS:
+            break
+    else:
+        code = "en" if header else None
+    if code and code != lang["seen"]:
+        with lock:
+            lang["seen"] = code
+            save_lang()
+
+
+def set_lang(data):
+    if data.get("lang") not in LANGS + ("auto",):
+        raise ValueError(tl("langue inconnue"))
+    with lock:
+        lang["choice"] = data["lang"]
+        save_lang()
+    pages.clear()
+    return state()
+
+
+def js_literals(script, fn):
+    """Applique fn au contenu de chaque chaine '...' ou "..." d'un script (commentaires // ignores)."""
+    out, i, n = [], 0, len(script)
+    while i < n:
+        c = script[i]
+        if c in "'\"`":
+            j = i + 1
+            while j < n and script[j] != c:
+                j += 2 if script[j] == "\\" else 1
+            out.append(c + fn(script[i + 1:j]) + c)
+            i = j + 1
+        elif script.startswith("//", i) and (i == 0 or script[i - 1] in " \n;{}()"):
+            j = script.find("\n", i)
+            j = n if j < 0 else j
+            out.append(script[i:j])
+            i = j
+        else:
+            out.append(c)
+            i += 1
+    return "".join(out)
+
+
+def translate_page(html, code):
+    """Traduit une page : textes entre balises, aria-label, et chaines du script (cles = texte francais exact)."""
+    if code == "fr":
+        return html
+
+    def word(s):
+        key = s.strip()
+        t = TR.get(key, {}).get(code)
+        return s if t is None or not key else s.replace(key, t.replace("'", "’"))
+
+    def markup(s):
+        s = re.sub(r">([^<>]+)<", lambda m: ">" + word(m.group(1)) + "<", s)
+        return re.sub(r'((?:aria-label|title|placeholder)=")([^"]*)(")', lambda m: m.group(1) + word(m.group(2)) + m.group(3), s)
+
+    def literal(s):
+        return markup(s) if "<" in s else word(s)
+
+    parts = re.split(r"(<script>.*?</script>)", html, flags=re.S)
+    for k, p in enumerate(parts):
+        parts[k] = "<script>" + js_literals(p[8:-9], literal) + "</script>" if p.startswith("<script>") else markup(p)
+    return "".join(parts).replace('<html lang="fr">', '<html lang="%s">' % code)
+
+
+pages = {}
+
+
+def page(name, html, code):
+    if (name, code) not in pages:
+        pages[(name, code)] = translate_page(html, code)
+    return pages[(name, code)]
+
 CHARGING = {"InProgress": "En charge", "Disconnected": "Débranchée", "Stopped": "En attente",
             "Finished": "Charge terminée", "Failure": "Erreur de charge"}
 CLIM = {"Enabled": "Clim/chauffage en marche", "Disabled": "Clim/chauffage arrêté",
@@ -249,8 +359,8 @@ select:disabled{opacity:.3}
   <label class="switch"><input type="checkbox" id="pon"><span></span></label></span>
  </div>
  <div class="chips days">
-  <button class="chip" data-d="0">L</button><button class="chip" data-d="1">M</button><button class="chip" data-d="2">M</button>
-  <button class="chip" data-d="3">J</button><button class="chip" data-d="4">V</button><button class="chip" data-d="5">S</button><button class="chip" data-d="6">D</button>
+  <button class="chip" data-d="0"></button><button class="chip" data-d="1"></button><button class="chip" data-d="2"></button>
+  <button class="chip" data-d="3"></button><button class="chip" data-d="4"></button><button class="chip" data-d="5"></button><button class="chip" data-d="6"></button>
  </div>
  <div class="hint">Aucun jour sélectionné = une seule fois</div>
  <div class="next" id="pnext"></div>
@@ -268,6 +378,12 @@ select:disabled{opacity:.3}
   <input type="text" id="c_model" class="txt" placeholder="Modèle (e-208…)" maxlength="30">
  </div>
  <div class="hint">Affiché en haut de la page. Pour remplacer la voiture générique par ta photo, dépose car.png (ou .webp, .jpg, fond transparent) à côté de app.py.</div>
+</section>
+
+<section class="card">
+ <h2><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>Langue</h2>
+ <select id="lang" style="width:100%"><option value="auto">Automatique (langue du téléphone)</option><option value="fr">Français</option>
+  <option value="en">English</option><option value="es">Español</option><option value="it">Italiano</option><option value="de">Deutsch</option></select>
 </section>
 
 <section class="card" id="appcard" hidden>
@@ -351,14 +467,17 @@ function setTheme(t){document.documentElement.dataset.theme=t;try{localStorage.s
 setTheme(document.documentElement.dataset.theme);
 document.getElementById('theme').onclick=()=>setTheme(document.documentElement.dataset.theme==='light'?'dark':'light');
 const $=id=>document.getElementById(id);
-const C=590.6,dayBtns=[...document.querySelectorAll('[data-d]')];
+const C=590.6,dayBtns=[...document.querySelectorAll('[data-d]')],LOC='fr-FR';
+function T(s,o){for(const k in o)s=s.split('{'+k+'}').join(o[k]);return s;}
+const dec=(v,d)=>Number(v).toLocaleString(LOC,{minimumFractionDigits:d,maximumFractionDigits:d});
+'LMMJVSD'.split('').forEach((c,i)=>dayBtns[i].textContent=c);
 let toastT;
 function toast(t,ok=true){const e=$('toast');e.textContent=t;e.style.color=ok?'var(--txt)':'var(--err)';
  e.classList.add('show');clearTimeout(toastT);toastT=setTimeout(()=>e.classList.remove('show'),2800);}
 function showPct(v){v=+v;$('pct').value=v;$('pv').textContent=v;$('pct').style.setProperty('--p',((v-50)*2)+'%');
  document.querySelectorAll('[data-p]').forEach(b=>b.classList.toggle('sel',+b.dataset.p==v));
  $('tick').style.bottom=v+'%';$('tick').hidden=v>=100;
- $('lim').textContent=v<100?'limite '+v+' %':'sans limite';}
+ $('lim').textContent=v<100?T('limite {v} %',{v}):'sans limite';}
 function setSel(id,v){const e=$(id);v=String(v);  // ajoute la valeur enregistree si le menu ne la propose pas
  if(![...e.options].some(o=>o.value===v)){const o=new Option(v,v);e.add(o);
   [...e.options].sort((a,b)=>a.value-b.value).forEach(x=>e.add(x));}
@@ -372,28 +491,28 @@ function progUi(){const on=$('pon').checked;$('ptime').disabled=!on;dayBtns.forE
 function fill(s){
  $('lvl').textContent=s.level==null?'–':s.level;
  $('bfill').style.height=(s.level||0)+'%';
- $('chg').textContent=s.charging||'';$('hero').classList.toggle('charging',s.charging=='En charge');$('hero').classList.toggle('unplugged',s.status=='Disconnected');$('hero').classList.toggle('waiting',s.status=='Stopped');$('chg').classList.toggle('on',s.charging=='En charge');
- $('cst').textContent=s.clim_status||'';$('cst').classList.toggle('on',/en marche/.test(s.clim_status||''));
+ $('chg').textContent=s.charging||'';$('hero').classList.toggle('charging',s.status=='InProgress');$('hero').classList.toggle('unplugged',s.status=='Disconnected');$('hero').classList.toggle('waiting',s.status=='Stopped');$('chg').classList.toggle('on',s.status=='InProgress');
+ $('cst').textContent=s.clim_status||'';$('cst').classList.toggle('on',s.clim_code=='Enabled');
  const r=s.range,lv=s.level||0,est=r&&r.km!=null?r.km:(r?r.car_km:null);
  $('kmv').textContent=est==null?'–':est;
  $('kfill').style.height=Math.max(0,Math.min(100,(lv-5)/95*100))+'%';
  const full=est!=null&&lv>5?Math.round(est*95/(lv-5)):null;
- $('klab').innerHTML=(r&&r.km!=null?'à ton rythme':'selon la voiture')+(full?'<br>plein : '+full+' km':'');
+ $('klab').innerHTML=(r&&r.km!=null?'à ton rythme':'selon la voiture')+(full?'<br>'+T('plein : {n} km',{n:full}):'');
  $('rng').hidden=!r;
- if(r){const car=r.car_km!=null?'voiture : '+r.car_km+' km':'';
+ if(r){const car=r.car_km!=null?T('voiture : {n} km',{n:r.car_km}):'';
   $('rng').innerHTML=r.km==null
-   ?'<div class="rsub">Autonomie à ton rythme : encore quelques trajets à enregistrer ('+r.trips+'/2)</div><div class="rsub">'+car+'</div>'
-   :'<div class="rsub">sous 90 km/h · entre '+r.low+' et '+r.high+' km · '+String(r.kwh100).replace('.',',')+' kWh/100'
-    +(r.temp!=null?' à '+r.temp+' °C':'')+'</div>'
-    +'<div class="rsub">'+(r.commutes!=null?'≈ '+r.commutes+' trajet'+(r.commutes>1?'s':'')+' '+r.commute_label+(car?' · ':''):'')+car+'</div>';}
+   ?'<div class="rsub">'+T('Autonomie à ton rythme : encore quelques trajets à enregistrer ({n}/2)',{n:r.trips})+'</div><div class="rsub">'+car+'</div>'
+   :'<div class="rsub">'+T('sous 90 km/h · entre {a} et {b} km',{a:r.low,b:r.high})+' · '+dec(r.kwh100,1)+' kWh/100'
+    +(r.temp!=null?T(' à {t} °C',{t:dec(r.temp,0)}):'')+'</div>'
+    +'<div class="rsub">'+(r.commutes!=null?'≈ '+r.commutes+' '+(r.commutes>1?'trajets':'trajet')+' '+r.commute_label+(car?' · ':''):'')+car+'</div>';}
  if(s.threshold!=null){showPct(s.threshold);
   $('hon').checked=!!s.stop_hour;$('hr').disabled=!s.stop_hour;if(s.stop_hour)$('hr').value=s.stop_hour;}
  if(s.start_hour)$('start').value=s.start_hour;
- $('startcur').textContent=s.start_hour?'Heure enregistrée dans la voiture : '+s.start_hour:'';
+ $('startcur').textContent=s.start_hour?T('Heure enregistrée dans la voiture : {h}',{h:s.start_hour}):'';
  showMode(s.auto.enabled);
  $('stopline').hidden=s.auto.enabled;$('stopauto').hidden=!s.auto.enabled;
- $('stopauto').textContent='Heures creuses auto : la charge s’arrête aussi à la fin de chaque plage ('
-  +s.auto.plages.map(p=>p.split('–')[1]).join(' et ')+') et reprend à la suivante.';
+ $('stopauto').textContent=T('Heures creuses auto : la charge s’arrête aussi à la fin de chaque plage ({l}) et reprend à la suivante.',
+  {l:s.auto.plages.map(p=>p.split('–')[1]).join(' et ')});
  const n=s.notif;$('n_plug').checked=n.plug;$('n_time').value=n.plug_time;setSel('n_lvl',n.plug_level);
  $('n_time').disabled=$('n_lvl').disabled=!n.plug;$('n_done').checked=n.done;$('n_peak').checked=n.peak;$('n_topic').textContent=n.topic;$('n_ntfy').checked=!!n.ntfy;$('n_ntfybox').hidden=!n.ntfy;
  if(document.activeElement!==$('c_brand'))$('c_brand').value=s.car.brand;if(document.activeElement!==$('c_model'))$('c_model').value=s.car.model;
@@ -402,25 +521,26 @@ function fill(s){
  if(document.activeElement!==$('b_l100'))$('b_l100').value=b.l100;if(document.activeElement!==$('b_fuel'))$('b_fuel').value=b.fuel;
  const ph=s.preheat;$('ph_on').checked=ph.enabled;setSel('ph_cold',ph.cold);setSel('ph_hot',ph.hot);
  setSel('ph_lead',ph.lead);['ph_cold','ph_hot','ph_lead'].forEach(id=>$(id).disabled=!ph.enabled);
- $('ph_list').innerHTML=ph.next.map(d=>{const t=d.temp==null?'–':String(d.temp).replace('.',',')+' °C';
+ $('ph_list').innerHTML=ph.next.map(d=>{const t=d.temp==null?'–':dec(d.temp,1)+' °C';
   const ic=d.temp==null?'':d.temp<=ph.cold?' ❄️':d.temp>=ph.hot?' ☀️':'';
-  const day=new Date(d.date+'T12:00').toLocaleDateString('fr-FR',{weekday:'short',day:'numeric',month:'short'});
+  const day=new Date(d.date+'T12:00').toLocaleDateString(LOC,{weekday:'short',day:'numeric',month:'short'});
   return '<div class="dep'+(d.skip?' off':'')+'" data-date="'+d.date+'" data-skip="'+(d.skip?1:0)+'"><span>'+day+' · '+d.time+' · '+d.place
    +'</span><span>'+(d.skip?'annulé':t+ic)+'</span></div>';}).join('');
  document.querySelectorAll('.dep').forEach(e=>e.onclick=()=>act('api/preheat_skip',{date:e.dataset.date,skip:e.dataset.skip=='0'},
   e.dataset.skip=='0'?'Préchauffage annulé pour ce jour':'Préchauffage rétabli pour ce jour'));
- $('ainfo').textContent='La page règle seule l’heure de début sur la prochaine plage creuse ('
-  +s.auto.plages.join(' ou ')+'). Prochain début : '+s.auto.target+'.';
+ $('ainfo').textContent=T('La page règle seule l’heure de début sur la prochaine plage creuse ({l}). Prochain début : {t}.',
+  {l:s.auto.plages.join(' ou '),t:s.auto.target});
  const p=s.clim;$('pon').checked=p.enabled;if(p.time)$('ptime').value=p.time;
  dayBtns.forEach(b=>b.classList.toggle('sel',p.days.includes(+b.dataset.d)));progUi();
- $('pnext').textContent=p.enabled&&p.next?'Prochain démarrage '+p.next:'';}
+ $('pnext').textContent=p.enabled&&p.next?T('Prochain démarrage {t}',{t:p.next}):'';
+ $('lang').value=s.lang||'auto';}
 async function call(url,body){const r=await fetch(url,body===undefined?{}:{method:'POST',
  headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
  const s=await r.json();if(s.error)throw new Error(s.error);return s;}
 async function act(url,body,ok){toast('Envoi…');
- try{fill(await call(url,body));toast(ok);}catch(e){toast('Erreur : '+e.message,false);}}
+ try{fill(await call(url,body));toast(ok);}catch(e){toast(T('Erreur : {e}',{e:e.message}),false);}}
 async function refresh(){$('refresh').classList.add('spin');
- try{fill(await call('api/state'));}catch(e){toast('Erreur : '+e.message,false);}
+ try{fill(await call('api/state'));}catch(e){toast(T('Erreur : {e}',{e:e.message}),false);}
  $('refresh').classList.remove('spin');}
 $('pct').oninput=e=>showPct(e.target.value);
 $('pct').onchange=saveEnd;
@@ -442,6 +562,8 @@ function savePreheat(){act('api/preheat',{enabled:$('ph_on').checked,cold:+$('ph
  lead:+$('ph_lead').value},'Préchauffage enregistré ✔');}
 ['ph_on','ph_cold','ph_hot','ph_lead'].forEach(id=>$(id).onchange=savePreheat);
 ['c_brand','c_model'].forEach(id=>$(id).onchange=()=>act('api/car',{brand:$('c_brand').value,model:$('c_model').value},'Nom de la voiture enregistré ✔'));
+$('lang').onchange=async()=>{try{await call('api/lang',{lang:$('lang').value});location.reload();}
+ catch(e){toast(T('Erreur : {e}',{e:e.message}),false);}};
 $('n_test').onclick=()=>act('api/notif_test',{},'Notification de test envoyée ✔');
 $('startset').onclick=()=>act('api/charge_start',{time:$('start').value},'Heure de début envoyée ✔');
 $('startnow').onclick=()=>{if(confirm('Lancer la charge tout de suite, en ignorant l’heure de début ?'))
@@ -557,24 +679,24 @@ function setTheme(t){document.documentElement.dataset.theme=t;try{localStorage.s
 setTheme(document.documentElement.dataset.theme);
 document.getElementById('theme').onclick=()=>setTheme(document.documentElement.dataset.theme==='light'?'dark':'light');
 const $=id=>document.getElementById(id);
-const MOIS=['janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre'];
+const LOC='fr-FR';
+function T(s,o){for(const k in o)s=s.split('{'+k+'}').join(o[k]);return s;}
 const METRICS={kwh100:{u:'kWh/100 km',d:1},km:{u:'km',d:0},cost:{u:'€',d:2}};
 let H=null,cur=null,metric='kwh100';
-function fmt(v,d){return v==null?'–':Number(v).toLocaleString('fr-FR',{minimumFractionDigits:d,maximumFractionDigits:d});}
-function mname(k){const p=k.split('-');return MOIS[+p[1]-1]+' '+p[0];}
-const COURT=['janv','févr','mars','avr','mai','juin','juil','août','sept','oct','nov','déc'];
-function short(k){return COURT[+k.split('-')[1]-1];}
-function when(iso){const d=new Date(iso);return d.toLocaleDateString('fr-FR',{weekday:'short',day:'numeric',month:'short'})
- +' · '+d.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'});}
+function fmt(v,d){return v==null?'–':Number(v).toLocaleString(LOC,{minimumFractionDigits:d,maximumFractionDigits:d});}
+function mname(k){return new Date(k+'-15T12:00').toLocaleDateString(LOC,{month:'long',year:'numeric'});}
+function short(k){return new Date(k+'-15T12:00').toLocaleDateString(LOC,{month:'short'}).replace('.','');}
+function when(iso){const d=new Date(iso);return d.toLocaleDateString(LOC,{weekday:'short',day:'numeric',month:'short'})
+ +' · '+d.toLocaleTimeString(LOC,{hour:'2-digit',minute:'2-digit'});}
 function dur(min){if(min==null)return '–';min=Math.round(min);return min<60?min+' min':Math.floor(min/60)+' h '+String(min%60).padStart(2,'0');}
-function plural(n,w){return n+' '+w+(n>1?'s':'');}
+function plural(n,one,many){return n+' '+(n>1?many:one);}
 
 function render(){
  const keys=H.months.map(m=>m.month),i=keys.indexOf(cur),m=H.months[i]||{};
  $('mname').textContent=mname(cur);$('prev').disabled=i<=0;$('next').disabled=i>=keys.length-1;
- $('s_odo').textContent=fmt(m.odo,0);$('s_km').textContent=fmt(m.km,0);$('s_trips').textContent=plural(m.trips||0,'trajet');
- $('s_c').textContent=fmt(m.kwh100,1);$('s_kwh').textContent=m.kwh_used!=null?fmt(m.kwh_used,1)+' kWh consommés':'';
- $('s_e').textContent=fmt(m.kwh_charged,1);$('s_ch').textContent=plural(m.charges||0,'charge');
+ $('s_odo').textContent=fmt(m.odo,0);$('s_km').textContent=fmt(m.km,0);$('s_trips').textContent=plural(m.trips||0,'trajet','trajets');
+ $('s_c').textContent=fmt(m.kwh100,1);$('s_kwh').textContent=m.kwh_used!=null?T('{n} kWh consommés',{n:fmt(m.kwh_used,1)}):'';
+ $('s_e').textContent=fmt(m.kwh_charged,1);$('s_ch').textContent=plural(m.charges||0,'charge','charges');
  $('s_cost').textContent=fmt(m.cost,2);$('s_100').textContent=m.cost100!=null?'≈ '+fmt(m.cost100,2)+' € / 100 km':'';
  chart();lists();}
 
@@ -594,7 +716,7 @@ function chart(){
  svg.querySelectorAll('.bar').forEach(b=>{const m=mon[+b.dataset.j];
   b.onclick=()=>{cur=m.month;render();};
   b.onpointerenter=()=>{const t=$('tip'),r=svg.getBoundingClientRect(),k=r.width/W;
-   t.textContent=mname(m.month)+' : '+(m[metric]==null?'pas de données':fmt(m[metric],M.d)+' '+M.u);
+   t.textContent=mname(m.month)+' – '+(m[metric]==null?'pas de données':fmt(m[metric],M.d)+' '+M.u);
    t.style.left=(+b.getAttribute('x')+slot/2)*k+'px';t.style.top=(top*k)+'px';t.style.display='block';};
   b.onpointerleave=()=>$('tip').style.display='none';});}
 
@@ -605,19 +727,19 @@ function lists(){
   :'<div class="empty">Aucun trajet ce mois-ci.</div>';
  $('charges').innerHTML=ch.length?ch.map(c=>'<div class="item"><div><div class="a">'+(c.start_level!=null?c.start_level:'?')+' → '+(c.end_level!=null?c.end_level:'?')+' %</div>'
   +'<div class="b">'+when(c.start)+(c.done?' · '+dur(c.min):' · fin non enregistrée')+'</div></div>'
-  +'<div class="r"><div class="a">'+(c.cost!=null?fmt(c.cost,2)+' €':'–')+'</div><div class="b">'+(c.kwh!=null?fmt(c.kwh,1)+' kWh':'')+(c.hc!=null?' · HC '+c.hc+' %':'')+'</div></div></div>').join('')
+  +'<div class="r"><div class="a">'+(c.cost!=null?fmt(c.cost,2)+' €':'–')+'</div><div class="b">'+(c.kwh!=null?fmt(c.kwh,1)+' kWh':'')+(c.hc!=null?T(' · HC {n} %',{n:c.hc}):'')+'</div></div></div>').join('')
   :'<div class="empty">Aucune charge ce mois-ci.</div>';
- $('tnote').textContent=(H.min_trip?'Trajets de plus de '+fmt(H.min_trip,0)+' km. ':'')
+ $('tnote').textContent=(H.min_trip?T('Trajets de plus de {n} km.',{n:fmt(H.min_trip,0)})+' ':'')
   +'Sous 10 km, la consommation d’un trajet seul est approximative (≈) : la batterie n’est mesurée qu’au pour cent près.';
- $('cnote').textContent='Coût TTC estimé : énergie entrée dans la batterie ÷ '+fmt(H.efficiency*100,0)+' % de rendement, au tarif heures creuses ('
-  +fmt(H.night_price,4)+' €) ou pleines ('+fmt(H.day_price,4)+' €) selon l’heure.';}
+ $('cnote').textContent=T('Coût TTC estimé : énergie entrée dans la batterie ÷ {e} % de rendement, au tarif heures creuses ({n} €) ou pleines ({d} €) selon l’heure.',
+  {e:fmt(H.efficiency*100,0),n:fmt(H.night_price,4),d:fmt(H.day_price,4)});}
 
 document.querySelectorAll('[data-m]').forEach(b=>b.onclick=()=>{metric=b.dataset.m;
  document.querySelectorAll('[data-m]').forEach(x=>x.classList.toggle('sel',x==b));chart();});
 $('prev').onclick=()=>{const k=H.months.map(m=>m.month);cur=k[k.indexOf(cur)-1]||cur;render();};
 $('next').onclick=()=>{const k=H.months.map(m=>m.month);cur=k[k.indexOf(cur)+1]||cur;render();};
 fetch('api/history').then(r=>r.json()).then(h=>{if(h.error)throw new Error(h.error);H=h;cur=h.months[h.months.length-1].month;render();})
- .catch(e=>{document.querySelector('main').insertAdjacentHTML('beforeend','<p class="empty">Erreur : '+e.message+'</p>');});
+ .catch(e=>{document.querySelector('main').insertAdjacentHTML('beforeend','<p class="empty">'+T('Erreur : {e}',{e:e.message})+'</p>');});
 </script></body></html>"""
 
 
@@ -630,7 +752,7 @@ def psacc(path, **params):
 def parse_hhmm(s):
     h, m = (int(x) for x in s.split(":"))
     if not (0 <= h <= 23 and 0 <= m <= 59):
-        raise ValueError("heure invalide")
+        raise ValueError(tl("heure invalide"))
     return h, m
 
 
@@ -766,8 +888,8 @@ def prog_view():
     if p["next"]:
         d = datetime.fromisoformat(p["next"])
         delta = (d.date() - datetime.now().date()).days
-        day = "aujourd'hui" if delta == 0 else "demain" if delta == 1 else DAY_NAMES[d.weekday()]
-        p["next"] = "%s à %s" % (day, d.strftime("%H:%M"))
+        day = tl("aujourd'hui") if delta == 0 else tl("demain") if delta == 1 else tl(DAY_NAMES[d.weekday()])
+        p["next"] = tl("%s à %s") % (day, d.strftime("%H:%M"))
     return p
 
 
@@ -793,14 +915,14 @@ def vehicle():
             ch = e.get("charging") or {}
             v["level"] = e.get("level")
             v["status"] = ch.get("status")
-            v["charging"] = CHARGING.get(v["status"], v["status"])
+            v["charging"] = tl(CHARGING.get(v["status"], v["status"] or ""))
             v["start_hour"] = delayed_hour(ch.get("next_delayed_time"))
             v["autonomy"] = e.get("autonomy")
     clim = ((info.get("preconditioning") or {}).get("air_conditioning") or {}).get("status")
-    v["clim_status"] = CLIM.get(clim, clim)
+    v["clim_status"], v["clim_code"] = tl(CLIM.get(clim, clim or "")), clim
     if fresh["at"] and fresh["status"] is not None:  # le cache de psacc n'a souvent pas l'etat de charge
         v["level"] = fresh["level"] if fresh["level"] is not None else v["level"]
-        v["status"], v["charging"] = fresh["status"], CHARGING.get(fresh["status"], fresh["status"])
+        v["status"], v["charging"] = fresh["status"], tl(CHARGING.get(fresh["status"], fresh["status"]))
     return v
 
 
@@ -829,7 +951,7 @@ def stop_charge(reason, level, now, resume=None):
     guard["tries"] += 1
     if guard["tries"] > 3:
         if guard["tries"] == 4:
-            ntfy("⚠️ Impossible d'arrêter la charge", "Batterie à %s %%, la voiture ne répond pas à l'ordre d'arrêt (%s)."
+            ntfy(tl("⚠️ Impossible d'arrêter la charge"), tl("Batterie à %s %%, la voiture ne répond pas à l'ordre d'arrêt (%s).")
                  % (level, reason), ["warning"], 4)
         return
     h, m = parse_hhmm(resume) if resume else ((now.hour - 1) % 24, 0)
@@ -865,13 +987,13 @@ def fresh_tick():
             h, m = parse_hhmm(stop)
             late = (now.hour * 60 + now.minute - (h * 60 + m)) % 1440
         if fresh["full"]:
-            stop_charge("limite %d %%" % thr, level, now)
+            stop_charge(tl("limite %d %%") % thr, level, now)
         elif stop and late < 30:  # dans la demi-heure qui suit l'heure d'arret
-            stop_charge("heure d'arrêt %s" % stop, level, now)
+            stop_charge(tl("heure d'arrêt %s") % stop, level, now)
         elif auto["enabled"] and not ns["forced"] and ns["prev"] == "InProgress" and not is_offpeak(now):
             # la charge deborde de la plage creuse : on la suspend jusqu'au debut de la plage suivante
             # (une charge qui demarre en heures pleines est geree par notif_tick, qui la met en attente)
-            stop_charge("fin des heures creuses", level, now, resume=next_window_start(now))
+            stop_charge(tl("fin des heures creuses"), level, now, resume=next_window_start(now))
     else:
         guard["tries"] = 0
 
@@ -882,7 +1004,7 @@ def state(cc=None):
     if cc is None:
         cc = psacc("/charge_control", vin=VIN)
     if "error" in cc or "percentage_threshold" not in cc:
-        raise RuntimeError(cc.get("error", "psa_car_controller ne répond pas correctement"))
+        raise RuntimeError(cc.get("error", tl("psa_car_controller ne répond pas correctement")))
     with lock:
         auto_view = {"enabled": auto["enabled"], "target": offpeak_target(datetime.now()),
                      "plages": ["%s–%s" % p for p in OFFPEAK]}
@@ -893,7 +1015,7 @@ def state(cc=None):
         print("Estimation d'autonomie impossible :", e, flush=True)
         rng = None
     return dict(v, threshold=cc["percentage_threshold"], stop_hour=fmt_hour(cc.get("_stop_hour")),
-                clim=prog_view(), auto=auto_view, notif=dict(notif), car=dict(car), preheat=preheat_view(), report={k: report[k] for k in ("enabled", "l100", "fuel")}, range=rng)
+                clim=prog_view(), auto=auto_view, notif=dict(notif), car=dict(car), preheat=preheat_view(), report={k: report[k] for k in ("enabled", "l100", "fuel")}, range=rng, lang=lang["choice"])
 
 
 # ---- Autonomie estimee a partir des trajets passes ----
@@ -970,13 +1092,13 @@ def check(res):
     if isinstance(res, dict) and res.get("error"):
         raise RuntimeError(res["error"])
     if res is False:
-        raise RuntimeError("commande refusée par psa_car_controller")
+        raise RuntimeError(tl("commande refusée par psa_car_controller"))
 
 
 def set_charge(data):
     pct = int(data["percentage"])
     if not 50 <= pct <= 100:
-        raise ValueError("pourcentage hors limites")
+        raise ValueError(tl("pourcentage hors limites"))
     h, m = 0, 0  # 0:00 = heure d'arret desactivee pour psa_car_controller
     if data.get("stop_hour"):
         h, m = parse_hhmm(data["stop_hour"])
@@ -1220,7 +1342,8 @@ def notifs_wait(after, timeout):
 
 
 def fr(x, decimals):
-    return ("%.*f" % (decimals, x)).replace(".", ",")
+    s = "%.*f" % (decimals, x)
+    return s if cur_lang() == "en" else s.replace(".", ",")
 
 
 def charge_summary(level):
@@ -1253,18 +1376,18 @@ def charge_ended(status, level, start_hour):
     else:
         near_stop = False
     if status == "Disconnected":
-        ntfy("🔌 Débranchée pendant la charge", "Batterie à %s%s." % (lvl, charge_summary(level)), ["electric_plug"])
+        ntfy(tl("🔌 Débranchée pendant la charge"), tl("Batterie à %s%s.") % (lvl, charge_summary(level)), ["electric_plug"])
     elif level is not None and (level >= thr - 2 or level >= 98):
-        ntfy("✅ Charge terminée", "Batterie à %s%s." % (lvl, charge_summary(level)), ["white_check_mark"])
-    elif guard.get("reason") == "fin des heures creuses":
-        ntfy("⏰ Fin des heures creuses", "Charge suspendue à %s%s. Reprise à %s." % (lvl, charge_summary(level), guard["resume"]),
+        ntfy(tl("✅ Charge terminée"), tl("Batterie à %s%s.") % (lvl, charge_summary(level)), ["white_check_mark"])
+    elif guard.get("resume"):  # suspendue en fin de plage creuse
+        ntfy(tl("⏰ Fin des heures creuses"), tl("Charge suspendue à %s%s. Reprise à %s.") % (lvl, charge_summary(level), guard["resume"]),
              ["alarm_clock"])
     elif near_stop:
-        ntfy("⏰ Charge arrêtée à l'heure prévue", "Batterie à %s%s." % (lvl, charge_summary(level)), ["alarm_clock"])
+        ntfy(tl("⏰ Charge arrêtée à l'heure prévue"), tl("Batterie à %s%s.") % (lvl, charge_summary(level)), ["alarm_clock"])
     elif not is_offpeak(now) and start_hour:
-        ntfy("⏸️ Charge en attente", "Batterie à %s. La charge reprendra à %s." % (lvl, start_hour), ["pause_button"])
+        ntfy(tl("⏸️ Charge en attente"), tl("Batterie à %s. La charge reprendra à %s.") % (lvl, start_hour), ["pause_button"])
     else:
-        ntfy("⚠️ Charge interrompue", "La charge s'est arrêtée à %s, avant la limite de %d %%%s."
+        ntfy(tl("⚠️ Charge interrompue"), tl("La charge s'est arrêtée à %s, avant la limite de %d %%%s.")
              % (lvl, thr, charge_summary(level)), ["warning"], 4)
 
 
@@ -1298,7 +1421,7 @@ def notif_tick(v):
     if notif["plug"] and status and ns["plug_day"] != today and now.strftime("%H:%M") >= notif["plug_time"]:
         ns["plug_day"] = today
         if status == "Disconnected" and level is not None and level < notif["plug_level"]:
-            ntfy("🔌 Pense à brancher la voiture", "Batterie à %d %%, la voiture n'est pas branchée." % level,
+            ntfy(tl("🔌 Pense à brancher la voiture"), tl("Batterie à %d %%, la voiture n'est pas branchée.") % level,
                  ["electric_plug"], 4)
 
     # debut / fin de charge, detectes par changement d'etat
@@ -1329,13 +1452,13 @@ def notif_tick(v):
                 print("Echec mise en attente :", e, flush=True)
                 target = None
         if notif["peak"] and target:
-            ntfy("⏳ Charge en heures pleines → attente demandée",
-                 "La voiture a commencé à charger (%s %%) en heures pleines. Je lui ai demandé d'attendre %s. "
-                 "Si la LED reste verte, appuie sur le bouton de la trappe." % (lvl, target), ["hourglass"], 4)
+            ntfy(tl("⏳ Charge en heures pleines → attente demandée"),
+                 tl("La voiture a commencé à charger (%s %%) en heures pleines. Je lui ai demandé d'attendre %s. "
+                    "Si la LED reste verte, appuie sur le bouton de la trappe.") % (lvl, target), ["hourglass"], 4)
         elif notif["peak"]:
-            ntfy("⚡ Charge en heures pleines",
-                 "La voiture charge maintenant (%s %%) en heures pleines. Pour attendre les heures creuses : "
-                 "bouton de la trappe, ou « Heure choisie » sur la page." % lvl, ["zap"], 4)
+            ntfy(tl("⚡ Charge en heures pleines"),
+                 tl("La voiture charge maintenant (%s %%) en heures pleines. Pour attendre les heures creuses : "
+                    "bouton de la trappe, ou « Heure choisie » sur la page.") % lvl, ["zap"], 4)
     elif prev == "InProgress" and status != "InProgress":
         try:
             log_charge(level)
@@ -1351,7 +1474,7 @@ def set_notif(data):
     parse_hhmm(plug_time)
     plug_level = int(data.get("plug_level", notif["plug_level"]))
     if not 10 <= plug_level <= 90:
-        raise ValueError("seuil hors limites")
+        raise ValueError(tl("seuil hors limites"))
     with lock:
         notif.update(plug=bool(data.get("plug")), plug_time=plug_time, plug_level=plug_level,
                      done=bool(data.get("done")), peak=bool(data.get("peak")), ntfy=bool(data.get("ntfy")))
@@ -1360,7 +1483,7 @@ def set_notif(data):
 
 
 def test_notif(_data):
-    ntfy("🔔 Test", "Les notifications de ta voiture fonctionnent !", ["bell"])
+    ntfy("🔔 Test", tl("Les notifications de ta voiture fonctionnent !"), ["bell"])
     return state()
 
 
@@ -1440,31 +1563,31 @@ def preheat_tick():
     if dep.date().isoformat() in preheat["skip"]:
         print("Prechauffage annule pour", dep, flush=True)
         return
-    when = "%s à %s" % (place, dep.strftime("%H:%M"))
+    when = tl("%s à %s") % (place, dep.strftime("%H:%M"))
     try:
         t = temp_at(dep, place, lat, lon)
     except Exception as e:
         print("Meteo indisponible :", e, flush=True)
         t = None
     if t is None:
-        ntfy("⚠️ Météo indisponible", "Préchauffage non lancé (départ : %s)." % when, ["warning"])
+        ntfy(tl("⚠️ Météo indisponible"), tl("Préchauffage non lancé (départ : %s).") % when, ["warning"])
         return
     t = round(t, 1)  # on decide sur la valeur affichee : 10,0 °C avec un seuil a 10 °C doit declencher
     if preheat["cold"] < t < preheat["hot"]:
         print("Prechauffage inutile : %.1f °C prevus (%s)" % (t, when), flush=True)
-        ntfy("🌤️ Pas de préchauffage", "%s °C prévus à %s (seuils %d °C / %d °C)."
+        ntfy(tl("🌤️ Pas de préchauffage"), tl("%s °C prévus à %s (seuils %d °C / %d °C).")
              % (fr(t, 1), when, preheat["cold"], preheat["hot"]), ["partly_sunny"], 2)
         return
     try:
         check(psacc("/preconditioning/%s/1" % VIN))
     except Exception as e:
-        ntfy("⚠️ Échec du préchauffage", "%s °C prévus (%s), mais la voiture n'a pas répondu : %s" % (fr(t, 1), when, e),
+        ntfy(tl("⚠️ Échec du préchauffage"), tl("%s °C prévus (%s), mais la voiture n'a pas répondu : %s") % (fr(t, 1), when, e),
              ["warning"], 4)
         return
     if t <= preheat["cold"]:
-        ntfy("❄️ Préchauffage lancé", "%s °C prévus à %s." % (fr(t, 1), when), ["snowflake"])
+        ntfy(tl("❄️ Préchauffage lancé"), tl("%s °C prévus à %s.") % (fr(t, 1), when), ["snowflake"])
     else:
-        ntfy("☀️ Climatisation lancée", "%s °C prévus à %s." % (fr(t, 1), when), ["sunny"])
+        ntfy(tl("☀️ Climatisation lancée"), tl("%s °C prévus à %s.") % (fr(t, 1), when), ["sunny"])
 
 
 def preheat_view():
@@ -1485,7 +1608,7 @@ def preheat_view():
 def set_preheat(data):
     cold, hot, lead = int(data["cold"]), int(data["hot"]), int(data["lead"])
     if not (-10 <= cold < hot <= 40 and 5 <= lead <= 60):
-        raise ValueError("réglages hors limites")
+        raise ValueError(tl("réglages hors limites"))
     with lock:
         preheat.update(enabled=bool(data.get("enabled")), cold=cold, hot=hot, lead=lead)
         save_preheat()
@@ -1525,27 +1648,31 @@ def load_report():
 
 def month_title(key, partial=False):
     name = MONTHS[int(key[5:]) - 1]
-    return "📊 Bilan %s%s %s%s" % ("d'" if name[0] in "aeiouéè" else "de ", name, key[:4], " (en cours)" if partial else "")
+    if cur_lang() == "fr":
+        title = "📊 Bilan %s%s %s" % ("d'" if name[0] in "aeiouéè" else "de ", name, key[:4])
+    else:
+        title = tl("📊 Bilan de %s %s") % (tl(name), key[:4])
+    return title + (tl(" (en cours)") if partial else "")
 
 
 def send_report(key, partial=False):
     h = history()
     m = next((x for x in h["months"] if x["month"] == key), None)
     if not m or not m["km"]:
-        ntfy(month_title(key, partial), "Aucun trajet enregistré ce mois-ci.", ["bar_chart"])
+        ntfy(month_title(key, partial), tl("Aucun trajet enregistré ce mois-ci."), ["bar_chart"])
         return
     km, eff = m["km"], h["efficiency"]
-    lines = ["%s km en %d trajet%s · %s kWh/100" % (fr(km, 0), m["trips"], "s" if m["trips"] > 1 else "",
-                                                   fr(m["kwh100"], 1))]
+    lines = [tl("%s km en %d trajets · %s kWh/100" if m["trips"] > 1 else "%s km en %d trajet · %s kWh/100")
+             % (fr(km, 0), m["trips"], fr(m["kwh100"], 1))]
     if m["cost"] is not None:
         cost, approx = m["cost"], ""
-        lines.append("Recharges : %s kWh pour %s €" % (fr(m["kwh_charged"], 0), fr(cost, 2)))
+        lines.append(tl("Recharges : %s kWh pour %s €") % (fr(m["kwh_charged"], 0), fr(cost, 2)))
     else:  # charges incompletes : estimation a partir de la consommation, au tarif heures creuses
         cost, approx = m["kwh_used"] / eff * h["night_price"], "≈ "
-        lines.append("Électricité : ≈ %s € (estimation)" % fr(cost, 2))
+        lines.append(tl("Électricité : ≈ %s € (estimation)") % fr(cost, 2))
     fuel = km * report["l100"] / 100 * report["fuel"]
-    lines.append("Soit %s%s € aux 100 km" % (approx, fr(cost / km * 100, 2)))
-    lines.append("En essence (%s L/100 à %s €) : %s € → %s%s € économisés"
+    lines.append(tl("Soit %s%s € aux 100 km") % (approx, fr(cost / km * 100, 2)))
+    lines.append(tl("En essence (%s L/100 à %s €) : %s € → %s%s € économisés")
                  % (fr(report["l100"], 1), fr(report["fuel"], 2), fr(fuel, 0), approx, fr(fuel - cost, 0)))
     ntfy(month_title(key, partial), "\n".join(lines), ["bar_chart"])
 
@@ -1566,7 +1693,7 @@ def report_tick():
 def set_report(data):
     l100, fuel = float(data["l100"]), float(data["fuel"])
     if not (2 <= l100 <= 20 and 0.5 <= fuel <= 5):
-        raise ValueError("valeurs hors limites")
+        raise ValueError(tl("valeurs hors limites"))
     with lock:
         report.update(enabled=bool(data.get("enabled")), l100=l100, fuel=fuel)
         save_report()
@@ -1594,7 +1721,7 @@ def load_car():
 def set_car(data):
     brand, model = str(data.get("brand", "")).strip()[:30], str(data.get("model", "")).strip()[:30]
     if not model:
-        raise ValueError("indique au moins le modèle")
+        raise ValueError(tl("indique au moins le modèle"))
     with lock:
         car.update(brand=brand, model=model)
         with open(CAR_FILE, "w", encoding="utf-8") as f:
@@ -1603,13 +1730,13 @@ def set_car(data):
 
 
 ROUTES = {"/api/car": set_car, "/api/report": set_report, "/api/report_now": report_now, "/api/preheat": set_preheat, "/api/preheat_skip": skip_preheat, "/api/notif": set_notif, "/api/notif_test": test_notif,"/api/set": set_charge, "/api/charge_start": set_charge_start, "/api/charge_auto": set_auto,
-          "/api/clim": set_clim, "/api/clim_prog": set_prog}
+          "/api/clim": set_clim, "/api/clim_prog": set_prog, "/api/lang": set_lang}
 
 
 
 
 
-def page(template):
+def fill_page(template):
     return template.replace("%MODEL%", html.escape(car["model"])).replace("%BRAND%", html.escape(car["brand"]))
 
 
@@ -1999,10 +2126,11 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(raw)
 
     def do_GET(self):
+        note_lang(self.headers.get("Accept-Language"))
         if self.path == "/":
-            self.send(200, page(PAGE), "text/html; charset=utf-8")
+            self.send(200, fill_page(page("main", PAGE, cur_lang())), "text/html; charset=utf-8")
         elif self.path == "/historique":
-            self.send(200, page(HISTORY), "text/html; charset=utf-8")
+            self.send(200, fill_page(page("history", HISTORY, cur_lang())), "text/html; charset=utf-8")
         elif self.path == "/api/history":
             try:
                 self.send(200, history())
@@ -2038,6 +2166,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send(404, {"error": "pas d'image " + name})
 
     def do_POST(self):
+        note_lang(self.headers.get("Accept-Language"))
         action = ROUTES.get(self.path)
         if not action:
             return self.send(404, {"error": "introuvable"})
@@ -2045,12 +2174,13 @@ class Handler(BaseHTTPRequestHandler):
             data = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))
             self.send(200, action(data))
         except (ValueError, KeyError) as e:
-            self.send(400, {"error": "requête invalide : %s" % e})
+            self.send(400, {"error": tl("requête invalide : %s") % e})
         except Exception as e:
             self.send(502, {"error": str(e)})
 
 
 if __name__ == "__main__":
+    load_lang()
     load_prog()
     load_auto()
     load_notif()

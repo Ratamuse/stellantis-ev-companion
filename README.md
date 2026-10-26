@@ -33,7 +33,8 @@ du groupe Stellantis (Peugeot, Citroën, DS, Opel, Vauxhall…), pensée pour le
 - **Notifications** sur le téléphone avec l'appli Android [EV Companion](android/) (sans appli tierce,
   [ntfy](https://ntfy.sh) en option) : oubli de branchement, fin de charge, charge interrompue, charge en heures
   pleines, préchauffage, bilan mensuel.
-- Mode **jour / nuit**, interface en français.
+- Mode **jour / nuit**, interface en **français, anglais, espagnol, italien et allemand** (langue du téléphone ou
+  choisie dans les réglages).
 
 ## Prérequis
 
@@ -45,7 +46,7 @@ du groupe Stellantis (Peugeot, Citroën, DS, Opel, Vauxhall…), pensée pour le
 
 ```bash
 sudo mkdir -p /opt/stellantis-ev-companion
-sudo cp app.py config.example.json /opt/stellantis-ev-companion/
+sudo cp app.py i18n.py config.example.json /opt/stellantis-ev-companion/
 cd /opt/stellantis-ev-companion
 sudo cp config.example.json config.json
 sudo nano config.json            # VIN, heures creuses, départs...
@@ -151,7 +152,8 @@ fournie par l'API utilisée (coordonnées nulles), alors que l'appli officielle 
 
 - Testé sur une Peugeot e-208 (2021) ; les autres modèles Stellantis compatibles avec psa_car_controller devraient
   fonctionner, sans garantie.
-- Page web en français uniquement (l'appli Android est en français, anglais, espagnol, italien et allemand).
+- Traductions (anglais, espagnol, italien, allemand) faites par l'auteur : les corrections sont les bienvenues dans
+  `i18n.py`.
 - Projet personnel, sans lien avec Stellantis. Les noms de marques appartiennent à leurs propriétaires.
 
 ## Licence
@@ -165,8 +167,8 @@ GPL-3.0-or-later, comme psa_car_controller.
 A phone-friendly companion web page for [psa_car_controller](https://github.com/flobz/psa_car_controller), for
 Stellantis electric cars (Peugeot, Citroën, DS, Opel, Vauxhall…).
 
-The screenshots at the top of this page were made with fictional data. The web page is currently in French only
-(see [Limitations](#limitations)); the Android app is translated.
+The screenshots at the top of this page were made with fictional data. The page and the Android app are available in
+English, French, Spanish, Italian and German.
 
 ### What it does
 
@@ -184,7 +186,8 @@ The screenshots at the top of this page were made with fictional data. The web p
 - **Phone notifications** with the [EV Companion](android/) Android app (no third-party app, [ntfy](https://ntfy.sh)
   optional): car not plugged in, charge finished, charge interrupted, charge started during peak hours,
   preconditioning, monthly report.
-- **Day / night** theme.
+- **Day / night** theme; interface in **English, French, Spanish, Italian and German** (phone language, or chosen in
+  the settings).
 
 ### Requirements
 
@@ -196,7 +199,7 @@ The screenshots at the top of this page were made with fictional data. The web p
 
 ```bash
 sudo mkdir -p /opt/stellantis-ev-companion
-sudo cp app.py config.example.json /opt/stellantis-ev-companion/
+sudo cp app.py i18n.py config.example.json /opt/stellantis-ev-companion/
 cd /opt/stellantis-ev-companion
 sudo cp config.example.json config.json
 sudo nano config.json            # VIN, off-peak windows, departures...
@@ -205,7 +208,7 @@ sudo systemctl daemon-reload && sudo systemctl enable --now stellantis-ev-compan
 ```
 
 The page is then available at `http://<server-address>:8080`. Install the Android app (see below), then enable the
-features you want in **⚙️ Réglages** (settings).
+features you want in **⚙️ Settings**.
 
 A generic car (3/4 view) is shown at the top of the page. To use a photo of your own car, put `car.png` (or `.webp`,
 `.jpg`, with a transparent background) next to `app.py`. Do not use copyrighted images if you publish your setup.
@@ -242,15 +245,15 @@ service.
    install it on your phone.
 2. On first launch, enter the server's address (for example `http://100.x.y.z:8080` with Tailscale).
 3. Tap **Allow notifications**, then **Don't optimise battery**, and **Test the connection**.
-4. In the page, **⚙️ Réglages** → **Envoyer une notification de test** (send a test notification): it should arrive
+4. In the page, **⚙️ Settings** → **Send a test notification**: it should arrive
    within seconds.
 5. Choose the alerts you want (car not plugged in, charge finished, charging during peak hours…).
 
 Details and how to build the APK: [android/README.md](android/README.md). There is no iPhone app: add the page to your
 home screen and use ntfy for notifications.
 
-**ntfy option.** To also receive notifications with [ntfy](https://ntfy.sh) (iPhone, computer…), turn on *Aussi par
-l'appli ntfy* (also via the ntfy app) in the *Notifications* card, install the ntfy app and subscribe to the **topic**
+**ntfy option.** To also receive notifications with [ntfy](https://ntfy.sh) (iPhone, computer…), turn on *Also via
+the ntfy app* in the *Notifications* card, install the ntfy app and subscribe to the **topic**
 shown (random, for example `ev-8a98a85fba109e95`, server `ntfy.sh`). Those messages then go through the public ntfy.sh
 service: anyone who knows the topic can read them. They contain no location and no credentials, only battery levels,
 costs and temperatures. Do not share your topic. You can also host your own ntfy server and change `NTFY_SERVER` in
@@ -301,7 +304,7 @@ the API used (null coordinates), even though the official app shows it.
 
 - Tested on a Peugeot e-208 (2021); other Stellantis models supported by psa_car_controller should work, with no
   guarantee.
-- Web page in French only for now (the Android app is in English, French, Spanish, Italian and German).
+- Translations (English, Spanish, Italian, German) were written by the author: corrections are welcome in `i18n.py`.
 - Personal project, not affiliated with Stellantis. Brand names belong to their owners.
 
 ### License
