@@ -1304,6 +1304,10 @@ def notif_tick(v):
     # debut / fin de charge, detectes par changement d'etat
     if status is None:  # l'API ne donne pas toujours l'etat de charge
         return
+    if ns["prev"] == "InProgress" and status == "Disconnected" and not ns.get("unplug_seen"):
+        ns["unplug_seen"] = True  # l'API annonce parfois "debranchee" un instant en pleine charge : on attend confirmation
+        return
+    ns["unplug_seen"] = False
     prev, ns["prev"] = ns["prev"], status
     if prev is None:  # premier passage apres demarrage : on observe seulement
         if status == "InProgress":
