@@ -32,6 +32,7 @@ AUTO_FILE = os.path.join(STATE_DIR, "auto_charge.json")
 NOTIF_FILE = os.path.join(STATE_DIR, "notif.json")
 PREHEAT_FILE = os.path.join(STATE_DIR, "preheat.json")
 REPORT_FILE = os.path.join(STATE_DIR, "report.json")
+SOH_FILE = os.path.join(STATE_DIR, "soh.json")
 CHARGE_LOG = os.path.join(STATE_DIR, "charges.json")
 CAR_FILE = os.path.join(STATE_DIR, "car.json")
 NTFY_SERVER = "https://ntfy.sh"
@@ -659,6 +660,13 @@ svg.i{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke
 </section>
 
 <section class="card">
+ <h2>Santé de la batterie</h2>
+ <div class="odo"><span>Capacité restante (SOH)</span><b><span id="soh_v">–</span> %</b></div>
+ <div class="chart"><svg id="sohchart" viewBox="0 0 400 150"></svg></div>
+ <div class="note" id="soh_note"></div>
+</section>
+
+<section class="card">
  <h2>Trajets du mois</h2>
  <div id="trips"></div>
  <div class="note" id="tnote"></div>
@@ -720,6 +728,27 @@ function chart(){
    t.style.left=(+b.getAttribute('x')+slot/2)*k+'px';t.style.top=(top*k)+'px';t.style.display='block';};
   b.onpointerleave=()=>$('tip').style.display='none';});}
 
+function sohChart(){
+ const p=(H.soh||[]).filter(x=>x.soh!=null),svg=$('sohchart'),W=400,L=34,R=8,top=12,base=118;
+ if(!p.length){$('soh_v').textContent='–';svg.innerHTML='';$('soh_note').textContent='Pas encore de mesure.';return;}
+ const last=p[p.length-1],vals=p.map(x=>x.soh);
+ $('soh_v').textContent=fmt(last.soh,1);
+ const lo=Math.min(85,Math.floor((Math.min(...vals)-2)/5)*5),hi=100;
+ const t0=new Date(p[0].date).getTime(),t1=Math.max(new Date(last.date).getTime(),t0+30*864e5);
+ const X=d=>L+(new Date(d).getTime()-t0)/(t1-t0)*(W-L-R),Y=v=>base-(v-lo)/(hi-lo)*(base-top);
+ let s='';
+ for(let g=lo;g<=hi;g+=5)[g].forEach(v=>{s+='<line x1="'+L+'" x2="'+(W-R)+'" y1="'+Y(v)+'" y2="'+Y(v)+'" style="stroke:var(--soft2)"/>'
+  +'<text x="'+(L-6)+'" y="'+(Y(v)+4)+'" text-anchor="end" font-size="11" style="fill:var(--mut)">'+fmt(v,0)+'</text>';});
+ const pts=p.map(x=>X(x.date).toFixed(1)+','+Y(x.soh).toFixed(1)).join(' ');
+ s+='<polyline points="'+pts+'" fill="none" stroke="url(#sg)" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>';
+ s+='<circle cx="'+X(last.date)+'" cy="'+Y(last.soh)+'" r="5" style="fill:var(--acc)"/>';
+ const day=d=>new Date(d+'T12:00').toLocaleDateString(LOC,{month:'short',year:'numeric'});
+ s+='<text x="'+L+'" y="'+(base+20)+'" font-size="11" style="fill:var(--mut)">'+day(p[0].date)+'</text>';
+ if(p.length>1)s+='<text x="'+(W-R)+'" y="'+(base+20)+'" text-anchor="end" font-size="11" style="fill:var(--mut)">'+day(last.date)+'</text>';
+ svg.innerHTML='<defs><linearGradient id="sg" x1="0" x2="1"><stop offset="0" stop-color="#2fd3ff"/><stop offset="1" stop-color="#6c5cff"/></linearGradient></defs>'+s;
+ $('soh_note').textContent=(last.km?T('{n} km au dernier relevé.',{n:fmt(last.km,0)})+' ':'')
+  +(p.length<2?'La courbe se remplira au fil des jours.':T('Valeur donnée par la voiture, relevée chaque jour depuis le {d}.',
+  {d:new Date(p[0].date+'T12:00').toLocaleDateString(LOC,{day:'numeric',month:'long',year:'numeric'})}));}
 function lists(){
  const tr=H.trips.filter(t=>t.month==cur).reverse(),ch=H.charges.filter(c=>c.month==cur).reverse();
  $('trips').innerHTML=tr.length?tr.map(t=>'<div class="item"><div><div class="a">'+fmt(t.km,1)+' km</div><div class="b">'+when(t.start)+' · '+dur(t.min)+'</div></div>'
@@ -738,7 +767,7 @@ document.querySelectorAll('[data-m]').forEach(b=>b.onclick=()=>{metric=b.dataset
  document.querySelectorAll('[data-m]').forEach(x=>x.classList.toggle('sel',x==b));chart();});
 $('prev').onclick=()=>{const k=H.months.map(m=>m.month);cur=k[k.indexOf(cur)-1]||cur;render();};
 $('next').onclick=()=>{const k=H.months.map(m=>m.month);cur=k[k.indexOf(cur)+1]||cur;render();};
-fetch('api/history').then(r=>r.json()).then(h=>{if(h.error)throw new Error(h.error);H=h;cur=h.months[h.months.length-1].month;render();})
+fetch('api/history').then(r=>r.json()).then(h=>{if(h.error)throw new Error(h.error);H=h;cur=h.months[h.months.length-1].month;render();sohChart();})
  .catch(e=>{document.querySelector('main').insertAdjacentHTML('beforeend','<p class="empty">'+T('Erreur : {e}',{e:e.message})+'</p>');});
 </script></body></html>"""
 
@@ -872,10 +901,46 @@ def auto_tick():
         save_auto()
 
 
+# ---- Sante de la batterie : psa_car_controller ne donne que la derniere valeur, on garde l'historique ----
+
+soh_retry = {"at": datetime.min}
+
+
+def load_soh():
+    try:
+        with open(SOH_FILE) as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return []
+
+
+def soh_tick():
+    """Un releve par jour : date, SOH (%) et compteur kilometrique."""
+    today = date.today().isoformat()
+    points = load_soh()
+    if (points and points[-1]["date"] == today) or datetime.now() < soh_retry["at"]:
+        return
+    try:
+        soh = (psacc("/battery/soh/" + VIN) or {}).get("soh")
+        info = psacc("/get_vehicleinfo/" + VIN, from_cache=1)
+    except Exception as e:
+        print("Releve SOH impossible :", e, flush=True)
+        soh_retry["at"] = datetime.now() + timedelta(hours=1)
+        return
+    if not isinstance(soh, (int, float)) or not 50 <= soh <= 110:
+        soh_retry["at"] = datetime.now() + timedelta(hours=6)  # pas encore de valeur (voiture pas encore lue)
+        return
+    km = ((info or {}).get("timed_odometer") or {}).get("mileage")
+    points.append({"date": today, "soh": round(float(soh), 1), "km": round(km) if km else None})
+    with lock:
+        with open(SOH_FILE, "w") as f:
+            json.dump(points, f)
+
+
 def scheduler():
     while True:
         time.sleep(20)
-        for tick in (fresh_tick, clim_tick, auto_tick, preheat_tick, report_tick):
+        for tick in (soh_tick, fresh_tick, clim_tick, auto_tick, preheat_tick, report_tick):
             try:
                 tick()
             except Exception as e:
@@ -1252,7 +1317,7 @@ def history(_data=None):
     return {"months": sorted(months.values(), key=lambda m: m["month"]),
             "trips": sorted(out_trips, key=lambda t: t["start"]),
             "charges": sorted(out_charges, key=lambda c: c["start"]),
-            "day_price": day, "night_price": night, "efficiency": eff, "min_trip": min_trip}
+            "day_price": day, "night_price": night, "efficiency": eff, "min_trip": min_trip, "soh": load_soh()}
 
 
 # ---- Notifications sur le telephone : appli Android EV Companion (et, en option, ntfy) ----

@@ -27,7 +27,7 @@ du groupe Stellantis (Peugeot, Citroën, DS, Opel, Vauxhall…), pensée pour le
 - **Clim / chauffage** : démarrage immédiat, programmation par jours de la semaine, et **préconditionnement selon la
   météo** (Open-Meteo) : il n'est lancé avant un départ que s'il fait froid ou chaud.
 - **Historique** : trajets, consommation, charges et **coût** (tarifs heures pleines / creuses de psa_car_controller),
-  graphique par mois, compteur kilométrique.
+  graphique par mois, compteur kilométrique, et **santé de la batterie** (SOH) avec sa courbe dans le temps.
 - **Autonomie « à ton rythme »** : estimée à partir de la consommation réelle des derniers trajets, corrigée par la
   température.
 - **Notifications** sur le téléphone avec l'appli Android [EV Companion](android/) (sans appli tierce,
@@ -181,7 +181,7 @@ English, French, Spanish, Italian and German.
 - **Air conditioning / heating**: start now, weekday schedule, and **weather-based preconditioning**
   ([Open-Meteo](https://open-meteo.com)): before a departure, it only starts if it is cold or hot outside.
 - **History**: trips, consumption, charges and their **cost** (peak / off-peak prices from psa_car_controller),
-  monthly chart, odometer.
+  monthly chart, odometer, and **battery health** (SOH) with its curve over time.
 - **"At your pace" range**: estimated from the real consumption of your recent trips, corrected for temperature.
 - **Phone notifications** with the [EV Companion](android/) Android app (no third-party app, [ntfy](https://ntfy.sh)
   optional): car not plugged in, charge finished, charge interrupted, charge started during peak hours,

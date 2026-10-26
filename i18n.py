@@ -174,6 +174,17 @@ _ROWS = [
      "Die Benachrichtigungen deines Autos funktionieren!"),
 
     # ---- historique
+    ("Santé de la batterie", "Battery health", "Salud de la batería", "Salute della batteria", "Akkuzustand"),
+    ("Capacité restante (SOH)", "Remaining capacity (SOH)", "Capacidad restante (SOH)", "Capacità residua (SOH)",
+     "Restkapazität (SOH)"),
+    ("Pas encore de mesure.", "No reading yet.", "Aún no hay medidas.", "Nessuna misura per ora.", "Noch kein Messwert."),
+    ("{n} km au dernier relevé.", "{n} km at the last reading.", "{n} km en la última lectura.", "{n} km all'ultima lettura.",
+     "{n} km bei der letzten Messung."),
+    ("La courbe se remplira au fil des jours.", "The curve will fill in over the days.", "La curva se irá completando día a día.",
+     "La curva si riempirà giorno dopo giorno.", "Die Kurve füllt sich mit den Tagen."),
+    ("Valeur donnée par la voiture, relevée chaque jour depuis le {d}.", "Value reported by the car, recorded daily since {d}.",
+     "Valor indicado por el coche, registrado cada día desde el {d}.", "Valore fornito dall'auto, registrato ogni giorno dal {d}.",
+     "Vom Auto gemeldeter Wert, täglich erfasst seit {d}."),
     ("Retour", "Back", "Volver", "Indietro", "Zurück"),
     ("Mois précédent", "Previous month", "Mes anterior", "Mese precedente", "Vorheriger Monat"),
     ("Mois suivant", "Next month", "Mes siguiente", "Mese successivo", "Nächster Monat"),
