@@ -74,6 +74,8 @@ public class SetupActivity extends Activity {
             col.addView(button(Tr.t("Autoriser les notifications"), v -> askPermissions()));
             col.addView(button(Tr.t("Ne pas optimiser la batterie"),
                     v -> startActivity(new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))));
+            col.addView(button(Tr.t("Masquer la notification permanente"), v -> hideServiceNotification()));
+            col.addView(text(Tr.t("Désactive l'interrupteur de cette catégorie : la connexion continue et les alertes arrivent toujours.")));
             col.addView(heading(Tr.t("Test")));
             col.addView(button(Tr.t("Tester la connexion"), v -> testServer()));
             status = text("");
@@ -86,6 +88,8 @@ public class SetupActivity extends Activity {
         col.addView(button(Tr.t("2. Localisation : « Toujours autoriser »"), v -> askBackground()));
         col.addView(button(Tr.t("3. Ne pas optimiser la batterie"),
                 v -> startActivity(new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))));
+        col.addView(button(Tr.t("Masquer la notification permanente"), v -> hideServiceNotification()));
+        col.addView(text(Tr.t("Désactive l'interrupteur de cette catégorie : la connexion continue et les alertes arrivent toujours.")));
 
         col.addView(heading(Tr.t("Test")));
         col.addView(button(Tr.t("Envoyer ma position maintenant"), v -> test()));
@@ -155,6 +159,14 @@ public class SetupActivity extends Activity {
                     : "Serveur injoignable : vérifie l'adresse et Tailscale.")).apply();
             runOnUiThread(this::refresh);
         }).start();
+    }
+
+    /** Ouvre le reglage Android de la categorie « Connexion au serveur ». */
+    private void hideServiceNotification() {
+        PushService.createChannel(this);
+        startActivity(new Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS)
+                .putExtra(Settings.EXTRA_APP_PACKAGE, getPackageName())
+                .putExtra(Settings.EXTRA_CHANNEL_ID, PushService.CHANNEL));
     }
 
     private void askPermissions() {

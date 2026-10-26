@@ -15,7 +15,7 @@ import android.os.IBinder;
  * appels longs enchaines sur /api/notifs/wait. Android impose une notification "e-208 connecte", reglee au minimum.
  */
 public class PushService extends Service {
-    private static final String CHANNEL = "connexion";
+    static final String CHANNEL = "connexion";
     private static final int WAIT_S = 50;
     private volatile boolean running;
     private Thread loop;
@@ -74,11 +74,15 @@ public class PushService extends Service {
         return null;
     }
 
-    private Notification notification() {
-        NotificationManager nm = getSystemService(NotificationManager.class);
+    /** Categorie de la notification permanente (l'utilisateur peut la masquer, la connexion continue). */
+    static void createChannel(Context ctx) {
         NotificationChannel ch = new NotificationChannel(CHANNEL, Tr.t("Connexion au serveur"), NotificationManager.IMPORTANCE_MIN);
         ch.setShowBadge(false);
-        nm.createNotificationChannel(ch);
+        ctx.getSystemService(NotificationManager.class).createNotificationChannel(ch);
+    }
+
+    private Notification notification() {
+        createChannel(this);
         return new Notification.Builder(this, CHANNEL)
                 .setSmallIcon(android.R.drawable.ic_lock_idle_charging)
                 .setContentTitle(String.format(Tr.t("%s connecté"), getApplicationInfo().loadLabel(getPackageManager())))
