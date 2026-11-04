@@ -225,6 +225,7 @@ svg.i{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke
 .lvl small{font-size:22px;color:var(--mut);font-weight:300}
 .lim{font-size:13px;color:var(--mut);margin-top:6px}
 .pills{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:16px}
+.age{display:flex;gap:10px;align-items:center;justify-content:center;flex-wrap:wrap;margin-top:10px;font-size:13px;color:var(--mut)}
 .pill{display:inline-flex;gap:6px;align-items:center;padding:7px 13px;border-radius:99px;background:var(--soft);color:var(--mut);font-size:13px}
 .pill.on{background:rgba(47,211,255,.13);color:var(--acc)}
 .pill:empty{display:none}
@@ -309,6 +310,8 @@ select:disabled{opacity:.3}
   </div>
  </div>
  <div class="pills"><span class="pill" id="chg"></span><span class="pill" id="cst"></span></div>
+ <div class="age" id="cage" hidden><span id="cage_t"></span>
+  <button class="btn ghost sm" id="wakebtn" style="width:auto;margin:0;padding:6px 12px" hidden>Réveiller</button></div>
  <div class="range" id="rng" hidden></div>
 </section>
 
@@ -500,6 +503,11 @@ function saveEnd(){clearTimeout(saveT);saveT=setTimeout(()=>act('api/set',{perce
  stop_hour:$('hon').checked?$('hr').value:null},'Fin de charge enregistrée ✔'),600);}
 function progUi(){const on=$('pon').checked;$('ptime').disabled=!on;dayBtns.forEach(b=>b.disabled=!on);}
 function fill(s){
+ const age=s.car_at?(Date.now()-new Date(s.car_at))/6e4:null;$('cage').hidden=age==null;
+ if(age!=null){$('wakebtn').hidden=age<30;$('cage_t').textContent=age<60
+  ?T('🕓 Données de la voiture : il y a {n} min',{n:Math.max(1,Math.round(age))})
+  :age<2880?T('🕓 Données de la voiture : il y a {n} h',{n:Math.round(age/60)})
+  :T('🕓 Données de la voiture : il y a {n} j',{n:Math.round(age/1440)});}
  $('lvl').textContent=s.level==null?'–':s.level;
  $('bfill').style.height=(s.level||0)+'%';
  $('chg').textContent=s.charging||'';$('hero').classList.toggle('charging',s.status=='InProgress');$('hero').classList.toggle('unplugged',s.status=='Disconnected');$('hero').classList.toggle('waiting',s.status=='Stopped');$('chg').classList.toggle('on',s.status=='InProgress');
@@ -588,6 +596,8 @@ $('lang').onchange=async()=>{try{await call('api/lang',{lang:$('lang').value});l
  catch(e){toast(T('Erreur : {e}',{e:e.message}),false);}};
 $('n_test').onclick=()=>act('api/notif_test',{},'Notification de test envoyée ✔');
 $('startset').onclick=()=>act('api/charge_start',{time:$('start').value},'Heure de début envoyée ✔');
+$('wakebtn').onclick=async()=>{await act('api/wakeup',{},'Réveil demandé : nouvelles données d’ici 1 à 2 min');
+ setTimeout(refresh,100000);};
 $('startnow').onclick=()=>{if(confirm('Lancer la charge tout de suite, en ignorant l’heure de début ?'))
  act('api/charge_start',{now:true},'Charge immédiate demandée ✔');};
 $('con').onclick=()=>act('api/clim',{on:true},'Démarrage demandé ✔');
@@ -1129,7 +1139,7 @@ def vehicle():
 # Le cache de psa_car_controller perd souvent l'etat de charge ("charging status not available from api") :
 # son arret a la limite ne se declenche alors pas. On interroge donc Stellantis directement et on arrete nous-memes.
 
-fresh = {"at": None, "level": None, "status": None, "full": False, "thr": None}
+fresh = {"at": None, "level": None, "status": None, "full": False, "thr": None, "car_at": None}
 guard = {"last_stop": None, "tries": 0, "reason": None, "resume": None}
 
 
@@ -1201,6 +1211,18 @@ def wake_tick(now, e, ch, status, level, thr):
         print("Reveil de la voiture impossible :", err, flush=True)
 
 
+def wake_car(_data=None):
+    """Bouton Reveiller : la voiture renvoie son etat, relu 90 s plus tard."""
+    res = psacc("/wakeup/" + VIN)
+    if isinstance(res, dict) and res.get("error"):
+        raise RuntimeError(tl("trop de réveils demandés, réessaie dans quelques minutes"))
+    now = datetime.now()
+    wake["at"] = now
+    fresh["at"] = now - timedelta(minutes=5) + timedelta(seconds=90)  # relecture fraiche dans 90 s
+    print("Reveil de la voiture demande depuis la page :", res, flush=True)
+    return state()
+
+
 def fresh_tick():
     now = datetime.now()
     every = timedelta(minutes=2 if fresh["status"] == "InProgress" else 5)
@@ -1215,6 +1237,8 @@ def fresh_tick():
     level, status = e.get("level"), ch.get("status")
     level = None if level is None else int(round(level))
     fresh.update(level=level, status=status)
+    t = car_time(e)
+    fresh["car_at"] = t.isoformat(timespec="seconds") if t else None
     cc = psacc("/charge_control", vin=VIN)
     thr = cc.get("percentage_threshold", 100)
     fresh["thr"] = thr
@@ -1259,7 +1283,7 @@ def state(cc=None):
         print("Estimation d'autonomie impossible :", e, flush=True)
         rng = None
     return dict(v, threshold=cc["percentage_threshold"], stop_hour=fmt_hour(cc.get("_stop_hour")),
-                clim=prog_view(), auto=auto_view, notif=dict(notif), car=dict(car), preheat=preheat_view(), report={k: report[k] for k in ("enabled", "l100", "fuel")}, range=rng, lang=lang["choice"])
+                clim=prog_view(), auto=auto_view, notif=dict(notif), car=dict(car), preheat=preheat_view(), report={k: report[k] for k in ("enabled", "l100", "fuel")}, range=rng, lang=lang["choice"], car_at=fresh["car_at"])
 
 
 # ---- Autonomie estimee a partir des trajets passes ----
@@ -1995,7 +2019,7 @@ def set_car(data):
     return state()
 
 
-ROUTES = {"/api/car": set_car, "/api/report": set_report, "/api/report_now": report_now, "/api/preheat": set_preheat, "/api/preheat_skip": skip_preheat, "/api/notif": set_notif, "/api/notif_test": test_notif,"/api/set": set_charge, "/api/charge_start": set_charge_start, "/api/charge_auto": set_auto,
+ROUTES = {"/api/car": set_car, "/api/report": set_report, "/api/report_now": report_now, "/api/preheat": set_preheat, "/api/preheat_skip": skip_preheat, "/api/notif": set_notif, "/api/notif_test": test_notif,"/api/set": set_charge, "/api/charge_start": set_charge_start, "/api/charge_auto": set_auto, "/api/wakeup": wake_car,
           "/api/clim": set_clim, "/api/clim_prog": set_prog, "/api/lang": set_lang}
 
 

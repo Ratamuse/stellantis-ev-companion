@@ -31,7 +31,8 @@ du groupe Stellantis (Peugeot, Citroën, DS, Opel, Vauxhall…), pensée pour le
 - **Charge surveillée même quand la voiture se tait** : garée, la voiture n'annonce parfois même pas le début d'une
   charge différée. Quand une charge est en cours ou attendue et que ses données datent, la page la réveille (au plus
   une fois par 20 min) pour pouvoir l'arrêter à temps. Après une coupure en pleine charge (bref défaut, LED rouge),
-  elle vérifie pendant 1 h si la charge reprend et te le dit.
+  elle vérifie pendant 1 h si la charge reprend et te le dit. L'âge des données de la voiture est affiché sur l'écran
+  principal, avec un bouton **Réveiller** quand elles ont plus de 30 min.
 - **Clim / chauffage** : démarrage immédiat, programmation par jours de la semaine, et **préconditionnement selon la
   météo** (Open-Meteo) : il n'est lancé avant un départ que s'il fait froid ou chaud.
 - **Historique** : trajets, consommation, charges et **coût** (tarifs heures pleines / creuses de psa_car_controller),
@@ -197,7 +198,8 @@ English, French, Spanish, Italian and German.
 - **Charging watched even when the car stays silent**: when parked, the car sometimes does not even report the start
   of a delayed charge. When a charge is running or expected and its data is old, the page wakes the car up (at most
   once every 20 min) so it can stop the charge on time. After an interruption during a charge (brief fault, red LED),
-  it checks for 1 h whether charging resumes and tells you.
+  it checks for 1 h whether charging resumes and tells you. The age of the car's data is shown on the main screen, with
+  a **Wake up** button when it is older than 30 min.
 - **Air conditioning / heating**: start now, weekday schedule, and **weather-based preconditioning**
   ([Open-Meteo](https://open-meteo.com)): before a departure, it only starts if it is cold or hot outside.
 - **History**: trips, consumption, charges and their **cost** (peak / off-peak prices from psa_car_controller),

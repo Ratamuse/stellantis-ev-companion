@@ -416,6 +416,20 @@ _ROWS = [
     ("La charge a repris (batterie à %s %%).", "Charging has resumed (battery at %s %%).",
      "La carga se ha reanudado (batería al %s %%).", "La ricarica è ripresa (batteria al %s %%).",
      "Das Laden läuft wieder (Akku bei %s %%)."),
+    # ---- age des donnees et reveil
+    ("Réveiller", "Wake up", "Despertar", "Sveglia", "Aufwecken"),
+    ("🕓 Données de la voiture : il y a {n} min", "🕓 Car data: {n} min ago", "🕓 Datos del coche: hace {n} min",
+     "🕓 Dati dell'auto: {n} min fa", "🕓 Fahrzeugdaten: vor {n} Min."),
+    ("🕓 Données de la voiture : il y a {n} h", "🕓 Car data: {n} h ago", "🕓 Datos del coche: hace {n} h",
+     "🕓 Dati dell'auto: {n} h fa", "🕓 Fahrzeugdaten: vor {n} Std."),
+    ("🕓 Données de la voiture : il y a {n} j", "🕓 Car data: {n} d ago", "🕓 Datos del coche: hace {n} d",
+     "🕓 Dati dell'auto: {n} g fa", "🕓 Fahrzeugdaten: vor {n} T."),
+    ("Réveil demandé : nouvelles données d’ici 1 à 2 min", "Wake-up sent: new data within 1 to 2 min",
+     "Despertador enviado: nuevos datos en 1 o 2 min", "Sveglia inviata: nuovi dati entro 1-2 min",
+     "Weckruf gesendet: neue Daten in 1 bis 2 Min."),
+    ("trop de réveils demandés, réessaie dans quelques minutes", "too many wake-ups requested, try again in a few minutes",
+     "demasiadas peticiones de despertar, vuelve a intentarlo en unos minutos",
+     "troppe richieste di sveglia, riprova tra qualche minuto", "zu viele Weckrufe, versuche es in ein paar Minuten erneut"),
 ]
 
 TR = {row[0]: dict(zip(CODES, row[1:])) for row in _ROWS}
