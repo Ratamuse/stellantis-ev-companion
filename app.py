@@ -317,6 +317,16 @@ select:disabled{opacity:.3}
  <div class="seg"><button id="m_auto">Heures creuses auto</button><button id="m_man">Heure choisie</button></div>
  <div id="p_auto">
   <div class="hint" id="ainfo"></div>
+  <div class="next" id="aplan"></div>
+  <div class="line">
+   <span>Commencer avant les heures creuses de nuit si elles ne suffisent pas</span>
+   <label class="switch"><input type="checkbox" id="a_early"><span></span></label>
+  </div>
+  <div class="row" style="align-items:center;gap:8px;flex-wrap:wrap;margin-top:6px">
+   <span class="hint" style="margin:0">au plus tôt</span>
+   <select id="a_max"><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option></select>
+   <span class="hint" style="margin:0">h avant le début de la plage</span>
+  </div>
  </div>
  <div id="p_man" hidden>
   <div class="line" style="border:0;margin-top:0">
@@ -531,6 +541,14 @@ function fill(s){
   e.dataset.skip=='0'?'Préchauffage annulé pour ce jour':'Préchauffage rétabli pour ce jour'));
  $('ainfo').textContent=T('La page règle seule l’heure de début sur la prochaine plage creuse ({l}). Prochain début : {t}.',
   {l:s.auto.plages.join(' ou '),t:s.auto.target});
+ const a=s.auto,pl=a.plan;$('a_early').checked=!!a.early;setSel('a_max',a.early_max);$('a_max').disabled=!a.early;
+ $('aplan').textContent=!pl?'':pl.rate==null?'Prévision de fin de charge dès que 2 charges auront été enregistrées.'
+  :(pl.full?T('Batterie déjà à la limite ({l} %).',{l:pl.thr})
+   :pl.early?(pl.finish?T('Début anticipé à {s} pour finir à {l} % vers {f}.',{s:pl.early,l:pl.thr,f:pl.finish})
+    :T('Début anticipé à {s} : ≈ {p} % à {e}.',{s:pl.early,p:pl.pct,e:pl.end}))
+   :pl.finish?T('Prévision : {l} % vers {f}.',{l:pl.thr,f:pl.finish})
+   :T('Prévision : ≈ {p} % à {e} (limite {l} %).',{p:pl.pct,e:pl.end,l:pl.thr}))
+  +' '+T('Vitesse mesurée : {r} %/h, soit ≈ {k} kW à la prise ({n} charges).',{r:dec(pl.rate,1),k:dec(pl.kw,1),n:pl.n});
  const p=s.clim;$('pon').checked=p.enabled;if(p.time)$('ptime').value=p.time;
  dayBtns.forEach(b=>b.classList.toggle('sel',p.days.includes(+b.dataset.d)));progUi();
  $('pnext').textContent=p.enabled&&p.next?T('Prochain démarrage {t}',{t:p.next}):'';
@@ -549,6 +567,9 @@ document.querySelectorAll('[data-p]').forEach(b=>b.onclick=()=>{showPct(b.datase
 $('hon').onchange=()=>{$('hr').disabled=!$('hon').checked;saveEnd();};
 $('hr').onchange=saveEnd;
 $('m_auto').onclick=()=>{showMode(true);act('api/charge_auto',{enabled:true},'Heures creuses auto activées ✔');};
+const earlySave=()=>{$('a_max').disabled=!$('a_early').checked;act('api/charge_auto',{early:$('a_early').checked,
+ early_max:+$('a_max').value},'Charge anticipée enregistrée ✔');};
+$('a_early').onchange=earlySave;$('a_max').onchange=earlySave;
 $('m_man').onclick=()=>{showMode(false);act('api/charge_auto',{enabled:false},'Choisis l’heure puis envoie-la à la voiture');};
 $('pon').onchange=progUi;
 dayBtns.forEach(b=>b.onclick=()=>b.classList.toggle('sel'));
@@ -848,8 +869,11 @@ def clim_tick():
 
 # ---- Debut de charge automatique sur les heures creuses ----
 
-auto = {"enabled": False, "sent": None}  # sent = derniere heure de debut envoyee a la voiture
+auto = {"enabled": False, "sent": None,  # sent = derniere heure de debut envoyee a la voiture
+        "early": False, "early_max": 3}  # early : commencer avant la plage si elle ne suffit pas (au plus early_max h)
 auto_retry = {"at": datetime.min}
+early_ok = {"at": None, "until": None}  # charge anticipee en cours de validite : pas de remise en attente
+PLAN_MARGIN = timedelta(minutes=15)  # marge pour atteindre la limite avant la fin de la plage
 
 
 def to_min(hhmm):
@@ -867,6 +891,76 @@ def offpeak_target(now):
     return plages[0][0]
 
 
+def target_window(now):
+    """(debut, fin, nuit) de la plage creuse visee par offpeak_target, en dates completes. nuit : derniere plage
+    qui finit avant midi, celle qui precede le depart du matin (la seule qu'on anticipe)."""
+    cur = now.hour * 60 + now.minute
+    plages = sorted(OFFPEAK, key=lambda p: to_min(p[1]))
+    start, end = next(((s, e) for s, e in plages if cur < to_min(e) + SWITCH_DELAY), plages[0])
+    we = now.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(minutes=to_min(end))
+    if cur >= to_min(end) + SWITCH_DELAY:
+        we += timedelta(days=1)
+    night = to_min(end) == max([to_min(e) for _, e in OFFPEAK if to_min(e) <= 720] or [-1])
+    return we - timedelta(minutes=(to_min(end) - to_min(start)) % 1440), we, night
+
+
+def charge_rate():
+    """Vitesse de charge mesuree (%/h, mediane) sur les dernieres charges enregistrees, jusqu'a 85 %."""
+    rates = []
+    for c in load_charge_log()[-20:]:
+        try:
+            hours = (datetime.fromisoformat(c["stop"]) - datetime.fromisoformat(c["start"])).total_seconds() / 3600
+            gained = c["end_level"] - c["start_level"]
+        except (KeyError, TypeError, ValueError):
+            continue
+        if hours >= 0.5 and gained >= 3 and c["end_level"] <= 85:
+            rates.append(gained / hours)
+    return {"rate": percentile(rates, 0.5), "n": len(rates)} if len(rates) >= 2 else None
+
+
+def charge_plan(now, charging=None):
+    """Prevision pour la plage creuse visee : debut (anticipe si besoin), % atteint a la fin, heure de fin."""
+    r, level, thr = charge_rate(), fresh["level"], fresh["thr"]
+    if not r or level is None or thr is None:
+        return {"rate": None} if not r else None
+    if charging is None:
+        charging = fresh["status"] == "InProgress"
+    ws, we, night = target_window(now)
+    start = now if charging or now >= ws else ws
+    need = timedelta(hours=max(0, thr - level) / r["rate"])
+    early = None
+    if auto["early"] and night and not charging and now < ws and level < thr and ws + need + PLAN_MARGIN > we:
+        early = max(we - need - PLAN_MARGIN, ws - timedelta(hours=auto["early_max"]))
+        early = max(early - timedelta(minutes=early.minute % 15, seconds=early.second,
+                                      microseconds=early.microsecond), now)
+        start = early
+    finish = start + need
+    pct = min(thr, level + r["rate"] * max(0.0, (we - start).total_seconds()) / 3600)
+    return {"rate": r["rate"], "n": r["n"], "level": level, "thr": thr, "ws": ws, "we": we, "early": early,
+            "pct": int(pct), "finish": finish if finish <= we else None, "full": level >= thr}
+
+
+def in_early(now):
+    return bool(early_ok["at"]) and early_ok["at"] - timedelta(minutes=5) <= now < early_ok["until"]
+
+
+def plan_view(now):
+    try:
+        p = charge_plan(now)
+    except Exception as e:
+        print("Prevision de charge impossible :", e, flush=True)
+        return None
+    if not p or p["rate"] is None:
+        return p
+    hm = lambda d: d.strftime("%H:%M") if d else None
+    soh = (load_soh() or [{}])[-1].get("soh") or 100
+    cfg = cached("settings", timedelta(minutes=10), lambda: psacc("/settings")).get("Electricity_config") or {}
+    eff = cfg.get("charger_efficiency") or 0.9
+    kw = p["rate"] / 100 * BATTERY_KWH * soh / 100 / eff  # puissance tiree de la prise (pertes du chargeur comprises)
+    return {"rate": round(p["rate"], 1), "kw": round(kw, 1), "n": p["n"], "thr": p["thr"], "pct": p["pct"], "full": p["full"],
+            "early": hm(p["early"]), "finish": hm(p["finish"]), "end": hm(p["we"])}
+
+
 def save_auto():
     with open(AUTO_FILE, "w") as f:
         json.dump(auto, f)
@@ -881,16 +975,26 @@ def load_auto():
 
 
 def auto_tick():
+    now = datetime.now()
     with lock:
-        if not auto["enabled"] or datetime.now() < auto_retry["at"] or fresh["full"]:
-            return  # batterie deja a la limite : on ne reprogramme pas un debut de charge inutile
-        target = offpeak_target(datetime.now())
+        if not auto["enabled"] or now < auto_retry["at"] or fresh["full"] or fresh["status"] == "InProgress":
+            return  # batterie deja a la limite, ou charge en cours : on ne touche pas a l'heure de debut
+    target, plan = offpeak_target(now), None
+    if auto["early"] and fresh["status"] not in (None, "Disconnected"):  # branchee et en attente
+        plan = charge_plan(now)
+        if plan and plan.get("early"):
+            target = "now" if plan["early"] <= now else plan["early"].strftime("%H:%M")
+    with lock:
         if target == auto["sent"]:
             return
-    h, m = parse_hhmm(target)
     try:
-        res = psacc("/charge_hour", vin=VIN, hour=h, minute=m)
-        check(res)
+        if target == "now":
+            check(psacc("/charge_now/%s/1" % VIN))
+        else:
+            h, m = parse_hhmm(target)
+            check(psacc("/charge_hour", vin=VIN, hour=h, minute=m))
+        if plan and plan.get("early"):
+            early_ok.update(at=plan["early"], until=plan["ws"])
     except Exception as e:
         print("Echec programmation debut de charge %s :" % target, e, flush=True)
         auto_retry["at"] = datetime.now() + timedelta(minutes=10)
@@ -906,12 +1010,34 @@ def auto_tick():
 soh_retry = {"at": datetime.min}
 
 
+SOH_JUMP = 4  # % : le SOH ne bouge pas plus que ca d'un releve a l'autre ; au-dela, c'est une valeur aberrante
+
+
 def load_soh():
+    """Releves enregistres, sans les valeurs aberrantes (champ errone de l'API, voir read_soh)."""
     try:
         with open(SOH_FILE) as f:
-            return json.load(f)
+            points = json.load(f)
     except (OSError, ValueError):
         return []
+    if len(points) < 3:
+        return points
+    mid = percentile([x["soh"] for x in points], 0.5)
+    return [x for x in points if abs(x["soh"] - mid) <= SOH_JUMP]
+
+
+def read_soh(info, last):
+    """SOH lu directement dans l'etat de la voiture. psa_car_controller enregistre battery.health.resistance,
+    mais selon les voitures et les jours l'API Stellantis donne le SOH dans health.capacity, resistance valant
+    alors autre chose (psa_car_controller discussion #1182). On garde la valeur plausible la plus proche du
+    dernier releve."""
+    e = next((x for x in (info or {}).get("energy") or [] if x.get("type") == "Electric"), {})
+    health = (e.get("battery") or {}).get("health") or {}
+    vals = [float(health[k]) for k in ("capacity", "resistance")
+            if isinstance(health.get(k), (int, float)) and 50 <= health[k] <= 100]
+    if not vals:
+        return None
+    return min(vals, key=lambda v: abs(v - last)) if last else vals[0]
 
 
 def soh_tick():
@@ -920,16 +1046,24 @@ def soh_tick():
     points = load_soh()
     if (points and points[-1]["date"] == today) or datetime.now() < soh_retry["at"]:
         return
+    last = points[-1]["soh"] if points else None
     try:
-        soh = (psacc("/battery/soh/" + VIN) or {}).get("soh")
         info = psacc("/get_vehicleinfo/" + VIN, from_cache=1)
+        soh = read_soh(info, last)
+        direct = soh is not None
+        if not direct:  # repli : la valeur enregistree par psa_car_controller (peut rester bloquee : sa table
+            soh = (psacc("/battery/soh/" + VIN) or {}).get("soh")  # n'accepte chaque valeur qu'une fois)
     except Exception as e:
         print("Releve SOH impossible :", e, flush=True)
         soh_retry["at"] = datetime.now() + timedelta(hours=1)
         return
-    if not isinstance(soh, (int, float)) or not 50 <= soh <= 110:
-        soh_retry["at"] = datetime.now() + timedelta(hours=6)  # pas encore de valeur (voiture pas encore lue)
+    if (not isinstance(soh, (int, float)) or not 50 <= soh <= 100
+            or (not direct and last is not None and abs(soh - last) > SOH_JUMP)):
+        print("Releve SOH ignore :", soh, flush=True)
+        soh_retry["at"] = datetime.now() + timedelta(hours=6)  # pas encore de valeur, ou valeur aberrante
         return
+    if direct:  # valeur lue dans la voiture : les anciens releves tres differents venaient de psa_car_controller
+        points = [x for x in points if abs(x["soh"] - soh) <= SOH_JUMP]
     km = ((info or {}).get("timed_odometer") or {}).get("mileage")
     points.append({"date": today, "soh": round(float(soh), 1), "km": round(km) if km else None})
     with lock:
@@ -995,7 +1129,7 @@ def vehicle():
 # Le cache de psa_car_controller perd souvent l'etat de charge ("charging status not available from api") :
 # son arret a la limite ne se declenche alors pas. On interroge donc Stellantis directement et on arrete nous-memes.
 
-fresh = {"at": None, "level": None, "status": None, "full": False}
+fresh = {"at": None, "level": None, "status": None, "full": False, "thr": None}
 guard = {"last_stop": None, "tries": 0, "reason": None, "resume": None}
 
 
@@ -1028,6 +1162,45 @@ def stop_charge(reason, level, now, resume=None):
     print("Arret de la charge (%s) a %s %%%s" % (reason, level, ", reprise %s" % resume if resume else ""), flush=True)
 
 
+WAKE_STALE = timedelta(minutes=15)  # donnees plus vieilles que ca alors qu'une charge est en cours ou attendue...
+WAKE_EVERY = timedelta(minutes=20)  # ...on reveille la voiture, au plus une fois par 20 min
+WAKE_RECHECK = timedelta(hours=1)  # apres une coupure en pleine charge : on surveille la reprise pendant 1 h
+wake = {"at": None, "recheck": None}
+
+
+def car_time(e):
+    """Date des dernieres donnees envoyees par la voiture (champ updated_at de Stellantis)."""
+    try:
+        return datetime.fromisoformat(str((e or {}).get("updated_at"))).astimezone()
+    except ValueError:
+        return None
+
+
+def wake_tick(now, e, ch, status, level, thr):
+    """Garee, la voiture n'envoie presque rien, parfois meme pas le debut d'une charge differee : personne ne sait
+    alors qu'elle charge, et ni la limite ni la fin des heures creuses ne l'arretent. Si une charge est en cours ou
+    attendue et que les donnees datent, on lui demande son etat (psa_car_controller : 6 reveils / 20 min au plus)."""
+    t = car_time(e)
+    recheck = bool(wake["recheck"]) and now < wake["recheck"]  # coupure en pleine charge : a-t-elle repris seule ?
+    if not (ch.get("plugged") or recheck) or t is None or level is None or level >= thr:
+        return
+    if now.astimezone() - t < WAKE_STALE or (wake["at"] and now - wake["at"] < WAKE_EVERY):
+        return
+    start = delayed_hour(ch.get("next_delayed_time"))
+    if start:
+        h, m = parse_hhmm(start)
+        since_start = (now.hour * 60 + now.minute - (h * 60 + m)) % 1440
+    expected = (status == "InProgress" or recheck or (auto["enabled"] and is_offpeak(now)) or in_early(now)
+                or (start is not None and since_start < 180))  # dans les 3 h qui suivent le debut differe
+    if not expected:
+        return
+    wake["at"] = now
+    try:
+        print("Reveil de la voiture (donnees de %s) :" % t.strftime("%H:%M"), psacc("/wakeup/" + VIN), flush=True)
+    except Exception as err:
+        print("Reveil de la voiture impossible :", err, flush=True)
+
+
 def fresh_tick():
     now = datetime.now()
     every = timedelta(minutes=2 if fresh["status"] == "InProgress" else 5)
@@ -1044,7 +1217,9 @@ def fresh_tick():
     fresh.update(level=level, status=status)
     cc = psacc("/charge_control", vin=VIN)
     thr = cc.get("percentage_threshold", 100)
+    fresh["thr"] = thr
     fresh["full"] = level is not None and thr < 100 and level >= thr and status != "Disconnected"
+    wake_tick(now, e, ch, status, level, thr)
 
     if status == "InProgress":
         stop = fmt_hour(cc.get("_stop_hour"))
@@ -1055,7 +1230,8 @@ def fresh_tick():
             stop_charge(tl("limite %d %%") % thr, level, now)
         elif stop and late < 30:  # dans la demi-heure qui suit l'heure d'arret
             stop_charge(tl("heure d'arrêt %s") % stop, level, now)
-        elif auto["enabled"] and not ns["forced"] and ns["prev"] == "InProgress" and not is_offpeak(now):
+        elif (auto["enabled"] and not ns["forced"] and ns["prev"] == "InProgress" and not is_offpeak(now)
+              and not in_early(now)):
             # la charge deborde de la plage creuse : on la suspend jusqu'au debut de la plage suivante
             # (une charge qui demarre en heures pleines est geree par notif_tick, qui la met en attente)
             stop_charge(tl("fin des heures creuses"), level, now, resume=next_window_start(now))
@@ -1070,9 +1246,12 @@ def state(cc=None):
         cc = psacc("/charge_control", vin=VIN)
     if "error" in cc or "percentage_threshold" not in cc:
         raise RuntimeError(cc.get("error", tl("psa_car_controller ne répond pas correctement")))
+    now = datetime.now()
+    plan = plan_view(now)
     with lock:
-        auto_view = {"enabled": auto["enabled"], "target": offpeak_target(datetime.now()),
-                     "plages": ["%s–%s" % p for p in OFFPEAK]}
+        auto_view = {"enabled": auto["enabled"], "target": (plan or {}).get("early") or offpeak_target(now),
+                     "plages": ["%s–%s" % p for p in OFFPEAK], "early": auto["early"], "early_max": auto["early_max"],
+                     "plan": plan}
     v = vehicle()
     try:
         rng = range_estimate(v["level"], v.get("autonomy"))
@@ -1113,7 +1292,8 @@ def range_estimate(level, car_km):
         return None
     trips = cached("trips", timedelta(minutes=10), lambda: psacc("/vehicles/trips"))
     try:
-        soh = cached("soh", timedelta(hours=6), lambda: (psacc("/battery/soh/" + VIN) or {}).get("soh"))
+        soh = ((load_soh() or [{}])[-1].get("soh")  # releve par la page (celui de psa_car_controller peut rester bloque)
+               or cached("soh", timedelta(hours=6), lambda: (psacc("/battery/soh/" + VIN) or {}).get("soh")))
     except Exception:
         soh = None  # sans SOH, on suppose la batterie neuve
     try:
@@ -1202,7 +1382,11 @@ def set_prog(data):
 
 def set_auto(data):
     with lock:
-        auto["enabled"] = bool(data.get("enabled"))
+        auto["enabled"] = bool(data.get("enabled", auto["enabled"]))
+        if "early" in data:
+            auto["early"] = bool(data["early"])
+        if "early_max" in data:
+            auto["early_max"] = min(max(int(data["early_max"]), 1), 6)
         auto["sent"] = None  # a l'activation, envoie tout de suite la bonne heure
         auto_retry["at"] = datetime.min
         save_auto()
@@ -1441,7 +1625,9 @@ def charge_ended(status, level, start_hour):
     else:
         near_stop = False
     if status == "Disconnected":
-        ntfy(tl("🔌 Débranchée pendant la charge"), tl("Batterie à %s%s.") % (lvl, charge_summary(level)), ["electric_plug"])
+        ntfy(tl("🔌 Charge interrompue"), tl("Batterie à %s%s. Débranchée, ou bref défaut de charge (LED rouge) : "
+                                             "je vérifie pendant 1 h si elle reprend.") % (lvl, charge_summary(level)),
+             ["electric_plug"])
     elif level is not None and (level >= thr - 2 or level >= 98):
         ntfy(tl("✅ Charge terminée"), tl("Batterie à %s%s.") % (lvl, charge_summary(level)), ["white_check_mark"])
     elif guard.get("resume"):  # suspendue en fin de plage creuse
@@ -1503,12 +1689,25 @@ def notif_tick(v):
         return
     if status == "InProgress" and prev != "InProgress":
         ns["start_level"], ns["start_at"] = level, now
-        if ns["forced"] or is_offpeak(now):
+        if wake["recheck"] and now < wake["recheck"]:
+            ntfy(tl("▶️ Charge reprise"), tl("La charge a repris (batterie à %s %%).") % ("?" if level is None else level),
+                 ["arrow_forward"])
+        wake["recheck"] = None
+        if ns["forced"] or is_offpeak(now) or in_early(now):
             return
         lvl = "?" if level is None else level
         target = None
         if auto["enabled"]:  # la voiture repasse en charge immediate a chaque branchement : on la remet en differe
             target = offpeak_target(now)
+            plan = charge_plan(now, charging=False) if auto["early"] else None
+            if plan and plan.get("early"):  # la plage ne suffit pas : debut anticipe
+                early_ok.update(at=plan["early"], until=plan["ws"])
+                if plan["early"] <= now:
+                    with lock:
+                        auto["sent"] = "now"
+                    print("Charge anticipee : on la laisse continuer", flush=True)
+                    return
+                target = plan["early"].strftime("%H:%M")
             try:
                 h, m = parse_hhmm(target)
                 check(psacc("/charge_hour", vin=VIN, hour=h, minute=m))
@@ -1525,6 +1724,8 @@ def notif_tick(v):
                  tl("La voiture charge maintenant (%s %%) en heures pleines. Pour attendre les heures creuses : "
                     "bouton de la trappe, ou « Heure choisie » sur la page.") % lvl, ["zap"], 4)
     elif prev == "InProgress" and status != "InProgress":
+        if status == "Disconnected":  # debranchee, ou bref defaut de charge : la voiture reprend souvent seule
+            wake["recheck"] = now + WAKE_RECHECK
         try:
             log_charge(level)
             if notif["done"]:

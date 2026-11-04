@@ -24,10 +24,20 @@ du groupe Stellantis (Peugeot, Citroën, DS, Opel, Vauxhall…), pensée pour le
 - **Heures creuses automatiques** : l'heure de début de charge différée est recalée sur la prochaine plage creuse
   (plusieurs plages possibles), la charge est suspendue en fin de plage et reprend à la suivante. Une charge qui
   démarre en heures pleines est remise en attente.
+- **Prévision de fin de charge** : vitesse de charge mesurée sur tes charges passées (%/h et puissance à la prise),
+  % atteint à la fin de la plage creuse ou heure à laquelle la limite sera atteinte. En option, **début anticipé** :
+  si la plage de nuit ne suffit pas pour atteindre la limite, la charge démarre juste assez tôt (au plus X h avant)
+  pour finir vers la fin des heures creuses.
+- **Charge surveillée même quand la voiture se tait** : garée, la voiture n'annonce parfois même pas le début d'une
+  charge différée. Quand une charge est en cours ou attendue et que ses données datent, la page la réveille (au plus
+  une fois par 20 min) pour pouvoir l'arrêter à temps. Après une coupure en pleine charge (bref défaut, LED rouge),
+  elle vérifie pendant 1 h si la charge reprend et te le dit.
 - **Clim / chauffage** : démarrage immédiat, programmation par jours de la semaine, et **préconditionnement selon la
   météo** (Open-Meteo) : il n'est lancé avant un départ que s'il fait froid ou chaud.
 - **Historique** : trajets, consommation, charges et **coût** (tarifs heures pleines / creuses de psa_car_controller),
-  graphique par mois, compteur kilométrique, et **santé de la batterie** (SOH) avec sa courbe dans le temps.
+  graphique par mois, compteur kilométrique, et **santé de la batterie** (SOH) avec sa courbe dans le temps. Le SOH
+  est lu directement dans les données de la voiture : celui de psa_car_controller peut rester bloqué sur une ancienne
+  valeur ([#871](https://github.com/flobz/psa_car_controller/issues/871)).
 - **Autonomie « à ton rythme »** : estimée à partir de la consommation réelle des derniers trajets, corrigée par la
   température.
 - **Notifications** sur le téléphone avec l'appli Android [EV Companion](android/) (sans appli tierce,
@@ -154,6 +164,8 @@ fournie par l'API utilisée (coordonnées nulles), alors que l'appli officielle 
   fonctionner, sans garantie.
 - Traductions (anglais, espagnol, italien, allemand) faites par l'auteur : les corrections sont les bienvenues dans
   `i18n.py`.
+- La limite de charge et la fin des heures creuses sont appliquées par la page via les serveurs Stellantis : si ces
+  serveurs sont en panne pendant une charge, la voiture charge jusqu'à 100 %.
 - Projet personnel, sans lien avec Stellantis. Les noms de marques appartiennent à leurs propriétaires.
 
 ## Licence
@@ -178,10 +190,20 @@ English, French, Spanish, Italian and German.
 - **Automatic off-peak charging**: the delayed-charge start time is moved to the next off-peak window (several windows
   supported), charging is paused at the end of a window and resumes at the next one. A charge that starts during peak
   hours is put back on hold.
+- **Charge end forecast**: charging speed measured on your past charges (%/h and power at the socket), % reached at the
+  end of the off-peak window or time at which the limit will be reached. Optional **early start**: if the night window
+  is too short to reach the limit, charging starts just early enough (at most X h before) to finish around the end of
+  the off-peak hours.
+- **Charging watched even when the car stays silent**: when parked, the car sometimes does not even report the start
+  of a delayed charge. When a charge is running or expected and its data is old, the page wakes the car up (at most
+  once every 20 min) so it can stop the charge on time. After an interruption during a charge (brief fault, red LED),
+  it checks for 1 h whether charging resumes and tells you.
 - **Air conditioning / heating**: start now, weekday schedule, and **weather-based preconditioning**
   ([Open-Meteo](https://open-meteo.com)): before a departure, it only starts if it is cold or hot outside.
 - **History**: trips, consumption, charges and their **cost** (peak / off-peak prices from psa_car_controller),
-  monthly chart, odometer, and **battery health** (SOH) with its curve over time.
+  monthly chart, odometer, and **battery health** (SOH) with its curve over time. The SOH is read directly from the
+  car's data: psa_car_controller's value can get stuck on an old one
+  ([#871](https://github.com/flobz/psa_car_controller/issues/871)).
 - **"At your pace" range**: estimated from the real consumption of your recent trips, corrected for temperature.
 - **Phone notifications** with the [EV Companion](android/) Android app (no third-party app, [ntfy](https://ntfy.sh)
   optional): car not plugged in, charge finished, charge interrupted, charge started during peak hours,
@@ -305,6 +327,8 @@ the API used (null coordinates), even though the official app shows it.
 - Tested on a Peugeot e-208 (2021); other Stellantis models supported by psa_car_controller should work, with no
   guarantee.
 - Translations (English, Spanish, Italian, German) were written by the author: corrections are welcome in `i18n.py`.
+- The charge limit and the end of off-peak hours are applied by the page through the Stellantis servers: if those
+  servers are down during a charge, the car charges to 100 %.
 - Personal project, not affiliated with Stellantis. Brand names belong to their owners.
 
 ### License
